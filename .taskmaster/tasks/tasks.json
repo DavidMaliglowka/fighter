@@ -1,0 +1,955 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Implement Physics-Based Jumping and Gravity System",
+        "description": "Replace free up/down movement with platformer-style jumping mechanics including single jump, double jump, and constant gravity",
+        "details": "Enable Phaser 3 Arcade Physics in client (public/index.html): scene.physics.world.gravity.y = 800. Add jump input handling for spacebar/up arrow with velocity.y = -500 for single jump, -400 for double jump. Track jump state (grounded, single, double) in player object. Server-side validation in server.js: check if player is grounded before allowing jumps, sync positions via Socket.IO at 60fps. Use Phaser's body.touching.down for ground detection. Implement client-side prediction for smooth jumping feel while server maintains authority.",
+        "testStrategy": "Test with 2-4 browser tabs: verify smooth jumping animation, double jump works only after single jump, gravity pulls players down consistently across all clients. Use Socket.IO debug logs to verify jump state synchronization.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Phaser Physics Configuration and Gravity Setup",
+            "description": "Configure Phaser 3 Arcade Physics system with proper gravity settings and world boundaries for the jumping mechanics",
+            "dependencies": [],
+            "details": "Enable Phaser 3 Arcade Physics in client (public/index.html) with scene.physics.world.gravity.y = 800. Set up world boundaries and physics body properties for players. Configure physics debug mode for development. Initialize physics world with proper collision detection settings and performance optimizations.\n<info added on 2025-07-16T05:43:28.083Z>\nCompleted Phaser Physics Configuration and Gravity Setup:\n\n✅ **Physics Configuration**:\n- Enabled gravity: `gravity: { y: 800 }` in Phaser config\n- Enabled debug mode for development\n- Set world boundaries: `this.physics.world.setBounds(0, 0, 800, 600)`\n\n✅ **Ground Platform Setup**:\n- Converted ground from visual rectangle to physics static body\n- Added physics collision with `this.physics.add.existing(ground, true)`\n\n✅ **Player Physics Bodies**:\n- Converted player sprites from simple rectangles to physics-enabled bodies\n- Added `this.physics.add.existing(playerSprites[id])` for each player\n- Configured world bounds collision: `body.setCollideWorldBounds(true)`  \n- Set no bounce: `body.setBounce(0, 0)`\n- Added player-ground collision detection\n- Updated position handling to use `body.setPosition()` instead of direct x,y assignment\n\n✅ **Global Variables**:\n- Added ground as global variable for collision reference\n- Maintained compatibility with existing health bars and attack effects\n\nThe physics system is now active with gravity pulling players down, and ground collision is working. Ready for jump input handling in the next subtask.\n</info added on 2025-07-16T05:43:28.083Z>",
+            "status": "done",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Jump Input Handling and State Management",
+            "description": "Implement input detection for jump commands and manage jump states (grounded, single jump, double jump)",
+            "dependencies": [
+              1
+            ],
+            "details": "Add jump input handling for spacebar/up arrow keys with velocity.y = -500 for single jump and -400 for double jump. Track jump state (grounded, single, double) in player object. Implement jump cooldowns and state transitions. Add input buffering for responsive controls and prevent spam jumping.\n<info added on 2025-07-16T05:46:05.079Z>\nCompleted Jump Input Handling and State Management:\n\n✅ **Client-Side Input Changes**:\n- Modified input system to use `up arrow` for jump instead of movement\n- Used `JustDown` for jump input to prevent spam jumping\n- Updated controls display to show \"Up: Jump\"\n\n✅ **Server-Side Jump State Tracking**:\n- Added `isGrounded`, `jumpsRemaining`, `lastJumpTime` to player objects\n- Added `velocityX`, `velocityY` for physics tracking\n- Set `jumpsRemaining: 2` for double jump capability\n\n✅ **Jump Velocity Logic**:\n- First jump: `velocityY = -500` (stronger)\n- Double jump: `velocityY = -400` (weaker)\n- Jump cooldown: 200ms between jumps\n- Proper jump state management\n\n✅ **Physics Integration**:\n- Added physics constants: `GRAVITY = 800`, `GROUND_Y = 560`, `FRAME_RATE = 60`\n- Created `updatePhysics()` function with gravity application\n- Added ground collision detection and jump state reset\n- Integrated physics update into main game loop before combat\n\n✅ **Movement Updates**:\n- Removed up/down movement, replaced with horizontal-only movement\n- Added velocity tracking for smooth movement\n- Maintained blocking speed reduction\n\nThe jump mechanics are now fully implemented on both client and server with proper state synchronization. Players can perform single and double jumps with gravity pulling them down to the ground level.\n</info added on 2025-07-16T05:46:05.079Z>\n<info added on 2025-07-16T05:50:59.514Z>\nFixed Critical Physics and Rendering Issues:\n\n**Position Update Bug Resolution**:\n- Resolved `playerSprites[id].body.setPosition is not a function` error by switching to `playerSprites[id].setPosition(player.x, player.y)`\n- Error occurred because client sprites no longer have physics bodies\n\n**Client-Server Physics Separation**:\n- Eliminated client-side physics bodies completely to prevent server-client conflicts\n- Client now handles only visual rendering with simple sprites\n- Server maintains full physics authority for all calculations including gravity, jumping, and collisions\n\n**Architecture Cleanup**:\n- Established clear separation: Client = visual display only, Server = all physics logic\n- Removed physics debug mode since client no longer has physics bodies\n- Streamlined rendering pipeline for better performance\n\n**Multiplayer Behavior Clarification**:\n- Page reload behavior (new players on refresh) is standard Socket.IO functionality\n- Each browser refresh creates new socket connection and player instance\n- Persistent player identity would require authentication system (planned for Task 9)\n\nSystem now operates with clean server-authoritative physics and conflict-free client rendering. Jump mechanics function correctly with server calculating all physics and clients receiving position updates for smooth visual display.\n</info added on 2025-07-16T05:50:59.514Z>",
+            "status": "done",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Ground Detection and Collision Logic",
+            "description": "Implement reliable ground detection system using Phaser's collision detection for accurate jump state management",
+            "dependencies": [
+              1
+            ],
+            "details": "Use Phaser's body.touching.down for ground detection. Implement collision callbacks for platform interactions. Add ground state tracking and reset jump counters when landing. Handle edge cases for collision detection and ensure consistent ground state across different platform types.\n<info added on 2025-07-16T05:55:22.572Z>\nGround Detection and Collision Logic - Completed via Server-Side Implementation:\n\n✅ **Server-Authoritative Ground Detection**:\n- Implemented in `updatePhysics()` function using `GROUND_Y = 560` constant\n- Ground collision check: `if (player.y >= GROUND_Y)` for reliable detection\n- Position correction: `player.y = GROUND_Y` when touching ground\n- Velocity reset: `player.velocityY = 0` on ground contact\n\n✅ **Jump State Management on Landing**:\n- Automatic `isGrounded = true` when player touches ground\n- Jump counter reset: `jumpsRemaining = 2` for fresh double jump capability\n- Air state detection: `isGrounded = false` when above ground level\n\n✅ **Architecture Decision - Server vs Client Physics**:\n- **Original Plan**: Use Phaser's `body.touching.down` for client-side detection\n- **Implemented Solution**: Server-authoritative ground detection for consistency\n- **Benefits**: Eliminates client-server physics conflicts, prevents cheating, ensures sync\n\n✅ **Collision Logic Features**:\n- Reliable ground collision at consistent Y position across all players\n- Instant state transitions between air/ground states\n- Edge case handling for precise collision detection\n- No bounce or settling physics for clean platformer feel\n\nThe ground detection system is working perfectly with server authority, providing consistent physics across all clients and accurate jump state management.\n</info added on 2025-07-16T05:55:22.572Z>",
+            "status": "done",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Server-Side Jump Validation and Synchronization",
+            "description": "Implement authoritative server-side jump validation and synchronize jump states across all clients",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Server-side validation in server.js: check if player is grounded before allowing jumps. Sync positions and jump states via Socket.IO at 60fps. Implement anti-cheat measures for jump validation. Broadcast jump events to all clients with proper state synchronization and handle network edge cases.\n<info added on 2025-07-16T05:59:51.084Z>\n**COMPLETED IMPLEMENTATION**:\n\nEnhanced Jump Validation System implemented with validateJump() and performJump() functions featuring basic validations (player health, jump availability, cooldown checks) and comprehensive anti-cheat measures including velocity validation to prevent impossible jumps when falling too fast, position bounds checking to prevent teleport exploits, rate limiting (max 10 jumps/second per player), and jump history tracking with automatic cleanup.\n\nInput Validation & Network Security added through validateInputs() function with type checking for proper booleans, injection prevention by rejecting unknown input properties, and anti-cheat measures preventing impossible input combinations like simultaneous left+right inputs.\n\nEnhanced Game State Synchronization maintaining 60fps sync with server timestamps for client synchronization, tick counter for debugging and lag compensation, and detailed physics state broadcasting including velocity, jump state, and ground status.\n\nJump Event Broadcasting System implemented with dedicated playerJump events sent to all clients containing rich event data (jump type, position, velocity, timestamp) to support visual effects on client-side including particle effects and audio.\n\nClient-Side Event Handling added with handleJumpEvent() function providing visual feedback through yellow circles for normal jumps, purple sparkles for double jumps, and smooth tween-based scaling and fade animations.\n\nMemory Management implemented with automatic jump history cleanup, proper visual effects destruction, and regular cleanup in physics loop to prevent memory leaks.\n\nAnti-Cheat Features Summary: cooldown enforcement (200ms minimum), velocity validation preventing impossible mid-air jumps, position bounds checking preventing teleportation, rate limiting preventing spam, input validation preventing injection attacks, and server-only jump counting authority.\n</info added on 2025-07-16T05:59:51.084Z>",
+            "status": "done",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Client-Side Prediction Implementation for Smooth Gameplay",
+            "description": "Implement client-side prediction for jumping mechanics to ensure smooth gameplay despite network latency",
+            "dependencies": [
+              4
+            ],
+            "details": "Implement client-side prediction for jump movements before server confirmation. Add input buffering during network delays. Implement server reconciliation to compare predicted vs actual positions with smooth interpolation corrections. Add rollback mechanisms for mispredicted jumps and ensure visual smoothness.\n<info added on 2025-07-16T06:06:13.698Z>\n**IMPLEMENTATION COMPLETED** - All core client-side prediction features successfully implemented and tested:\n\n**Client-Side Physics Simulation**: Full physics mirroring with server synchronization (gravity: 800, ground detection, jump velocities) and dedicated clientPlayerState tracking for immediate input responsiveness.\n\n**Input Buffering System**: Robust inputBuffer with timestamp tracking, automatic cleanup (1-second retention), and network delay handling for seamless input processing.\n\n**Server Reconciliation**: Advanced reconcileWithServer() function with 5-pixel correction threshold, smooth interpolation (0.1 factor), and intelligent position error management to prevent visual glitches.\n\n**Smart Position Management**: Conditional rendering system where local player uses prediction while other players receive direct server updates, preventing prediction conflicts.\n\n**Debug & Testing Tools**: Comprehensive debugging suite including prediction toggle ('P' key), real-time debug panel showing prediction status/position error/buffer size/latency, and visual performance feedback.\n\n**Performance Optimizations**: CPU-efficient prediction limited to local player only, distance-based error calculation, minimal correction thresholds, and automatic buffer memory management.\n\n**Testing Results**: Achieved immediate input response with maintained server authority, automatic smooth error correction without visual artifacts, and seamless gameplay experience across varying network conditions.\n</info added on 2025-07-16T06:06:13.698Z>\n<info added on 2025-07-16T06:33:17.471Z>\n**Final Optimization: Input Consistency & Health Bar Prediction**\n\n**Input Cancellation Consistency**: \n- Added same left+right input cancellation logic to client prediction as server has\n- Client now processes: `if (inputs.left && inputs.right) { inputs.left = false; inputs.right = false; }`\n- Eliminates prediction errors caused by client/server input processing mismatches\n- Added debug panel indicator showing \"CANCELLED (L+R)\" in red vs \"Normal\" in green\n\n**Health Bar Prediction Enhancement**:\n- Health bars now use predicted position for local player: `clientPlayerState.x/y` vs server position for others\n- Eliminates visual lag where health bar trails behind player sprite during local movement\n- Both player sprite and health bar now update immediately on local input\n\n**Design Philosophy Confirmed**:\n- Client prediction should mirror server logic exactly for consistency\n- This isn't about client security (impossible) but about minimizing prediction corrections\n- Perfect input processing alignment reduces jitter and visual artifacts\n\n**Performance Impact**:\n- Input cancellation adds minimal CPU overhead (~1-2 operations per frame)\n- Debug panel provides real-time feedback on input processing status\n- Health bar prediction eliminates visual disconnects during local player movement\n\n**Technical Result**: Client prediction now perfectly matches server input validation while maintaining responsive local movement with synchronized visual elements.\n</info added on 2025-07-16T06:33:17.471Z>",
+            "status": "done",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Add Dash Mechanics with Cooldown System",
+        "description": "Implement quick burst movement (dashing) triggered by double-tap or dedicated key with cooldown to prevent spam",
+        "details": "Add dash input detection in client: track double-tap timing for left/right arrows or use dedicated key (shift). Apply horizontal velocity boost (velocity.x += direction * 300) with 0.5s cooldown. Server-side: validate dash availability, apply knockback-style movement, broadcast position updates. Store dash cooldown timestamp in player object. Client-side prediction: immediately show dash movement, server corrects if invalid. Add visual feedback with brief trail effect using Phaser particles.",
+        "testStrategy": "Verify dash works in all directions, cooldown prevents spam, smooth movement across multiple clients. Test edge cases like dashing into walls or off platforms.",
+        "priority": "medium",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Input Detection System for Double-Tap and Dedicated Keys",
+            "description": "Implement client-side input detection system that tracks double-tap timing for directional keys and handles dedicated dash key inputs with proper timing validation",
+            "dependencies": [],
+            "details": "Create input handler in client.js to track double-tap timing for left/right arrow keys with configurable timing window (250ms). Add dedicated dash key support (shift/space). Implement input state tracking to prevent multiple dash triggers. Add input validation to ensure dash direction is valid based on current movement state. Store last key press timestamps and implement timing logic for double-tap detection.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Dash Movement Physics and Velocity Application",
+            "description": "Implement the core dash movement mechanics with velocity manipulation and physics integration for smooth burst movement",
+            "dependencies": [
+              1
+            ],
+            "details": "Add dash physics in both client and server: apply horizontal velocity boost (velocity.x += direction * 300) with proper direction calculation. Implement dash duration control with gradual velocity decay. Add collision detection during dash movement to handle wall interactions. Integrate with existing physics system to maintain gravity and platform collision during dash. Add dash state management to track active dash status and prevent movement conflicts.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Server-Side Validation and Cooldown Management",
+            "description": "Implement authoritative server-side dash validation, cooldown system, and state synchronization to prevent abuse and ensure fair gameplay",
+            "dependencies": [
+              2
+            ],
+            "details": "Add server-side dash validation in server.js: verify dash availability based on cooldown timestamp (0.5s). Implement cooldown management using player object timestamps. Add dash state broadcasting to all clients with position updates. Implement anti-cheat measures to prevent dash spam and validate dash requests. Add server reconciliation for dash movements and handle edge cases like simultaneous dash requests. Store dash cooldown state persistently per player.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Visual Feedback Implementation with Particle Effects and Client-Side Prediction",
+            "description": "Create visual feedback system with particle effects, dash animations, and client-side prediction for responsive gameplay feel",
+            "dependencies": [
+              3
+            ],
+            "details": "Implement Phaser particle system for dash trail effects with configurable colors and duration. Add dash animation sprites and visual indicators for dash direction. Implement client-side prediction for immediate dash feedback before server confirmation. Add cooldown UI indicator showing dash availability status. Create smooth interpolation for server corrections to prevent jarring movement. Add visual effects for dash impact and directional indicators. Implement particle cleanup and performance optimization for multiple simultaneous dashes.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Create Static Platform System with Collision Detection",
+        "description": "Design and implement 2-3 level platform layout with proper collision detection for jumping and landing",
+        "details": "Create platforms.js config file with platform definitions: [{x: 200, y: 400, width: 200, height: 20}, {x: 600, y: 300, width: 150, height: 20}]. In Phaser client: create platform sprites using scene.physics.add.staticGroup(), enable collision with player using scene.physics.add.collider(player, platforms). Server-side: maintain platform data, validate player positions against platform boundaries. Implement one-way platforms (can jump through from below). Use Phaser's body.touching.down for ground detection on platforms.",
+        "testStrategy": "Test players can land on all platforms, jump between levels, collision detection works consistently. Verify multiplayer sync when players are on different platforms simultaneously.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Platform Configuration and Data Structure Design",
+            "description": "Create platform configuration system with data structures for static platforms, including position, dimensions, and properties for one-way collision detection",
+            "dependencies": [],
+            "details": "Create platforms.js config file with platform definitions array containing objects with x, y, width, height, and type properties. Define platform types (solid, one-way) and collision boundaries. Structure data for easy client-server synchronization and validation. Include platform metadata for rendering and physics properties.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Client-side Platform Rendering and Physics Setup",
+            "description": "Implement Phaser.js platform rendering system with physics bodies and visual representation",
+            "dependencies": [
+              1
+            ],
+            "details": "Use Phaser's scene.physics.add.staticGroup() to create platform physics bodies. Load platform sprites and position them according to configuration data. Set up proper physics properties including immovable bodies and collision boundaries. Implement visual styling and ensure platforms render correctly across different screen sizes.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Collision Detection Implementation with One-way Platforms",
+            "description": "Develop collision detection system supporting both solid platforms and one-way platforms that allow jumping through from below",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement scene.physics.add.collider(player, platforms) with custom collision callbacks. Add logic for one-way platforms using body.touching.down detection. Handle jump-through mechanics by checking player velocity and position relative to platform. Ensure proper landing detection and prevent clipping through platforms.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Server-side Position Validation and Multiplayer Synchronization",
+            "description": "Create server-side validation system for player positions against platform boundaries and synchronize platform interactions across multiple clients",
+            "dependencies": [
+              3
+            ],
+            "details": "Maintain authoritative platform data on server and validate player positions against platform boundaries. Implement position correction for invalid player states. Synchronize platform collision events across all clients using socket emissions. Handle edge cases like simultaneous collisions and ensure consistent game state across all connected players.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Implement Combo System with Attack Chaining",
+        "description": "Add ability to chain attacks together with timing-based combos and stun effects",
+        "details": "Extend handleCombat() in server.js: track attack sequences with timestamps, detect combos based on timing windows (500ms between attacks). Add combo counter and damage multiplier (1.2x for 2-hit, 1.5x for 3-hit). Implement stun states: brief movement disable (200ms) after being hit to enable follow-ups. Client-side: show combo counter UI, attack animation sequences. Add knock-up effect for aerial combos using velocity.y = -200. Store combo state in player object with resetTimer.",
+        "testStrategy": "Test combo chains work with proper timing, damage multipliers apply correctly, stun prevents movement briefly. Verify combo resets after timeout or successful completion across multiple clients.",
+        "priority": "medium",
+        "dependencies": [
+          3
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Attack Sequence Tracking and Timing Windows",
+            "description": "Implement attack sequence tracking with timestamp-based timing windows to detect valid combo chains",
+            "dependencies": [],
+            "details": "Extend handleCombat() in server.js to track attack sequences with timestamps. Store attack history in player object with array of {timestamp, attackType} entries. Implement timing window validation (500ms between attacks) to determine valid combo chains. Add sequence reset logic when timing window expires or player is hit. Track combo state with resetTimer and cleanup expired sequences.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Combo Detection Logic and Damage Multipliers",
+            "description": "Implement combo detection algorithms and progressive damage multiplier system",
+            "dependencies": [
+              1
+            ],
+            "details": "Add combo detection logic that analyzes attack sequences to identify valid combos. Implement damage multiplier system: 1.2x for 2-hit combos, 1.5x for 3-hit combos, scaling further for longer chains. Calculate final damage by applying multipliers to base attack damage. Store combo counter in player object and increment on successful chained attacks. Add combo validation to ensure attacks connect within timing windows.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Stun State Implementation and Movement Restrictions",
+            "description": "Implement stun mechanics with movement restrictions and recovery states",
+            "dependencies": [
+              2
+            ],
+            "details": "Add stun state to player object with duration tracking (200ms base stun). Implement movement restriction logic that disables player input during stun period. Add stun recovery system with gradual movement restoration. Implement knock-up effect for aerial combos using velocity.y = -200. Add stun resistance scaling to prevent infinite combos. Sync stun states across clients via Socket.IO.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Client-Side UI and Animation Sequences",
+            "description": "Create visual feedback systems including combo counter UI and attack animation sequences",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement combo counter UI display that shows current combo count and multiplier. Add attack animation sequences that chain smoothly for combo attacks. Create visual effects for successful combos including screen shake and particle effects. Implement damage number display with multiplier indicators. Add combo break notifications and reset animations. Use Phaser's animation system for smooth transitions between attack states.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Server-Side Validation and State Synchronization",
+            "description": "Implement authoritative server validation and real-time state synchronization for combo system",
+            "dependencies": [
+              3,
+              4
+            ],
+            "details": "Add server-side validation for all combo actions to prevent cheating. Implement authoritative combo state management with client reconciliation. Add real-time synchronization of combo states, damage calculations, and stun effects across all clients. Implement lag compensation for combo timing validation. Add network optimization for frequent combo state updates. Ensure consistent game state across all connected players with proper error handling and rollback mechanisms.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Add Character Classes with Unique Abilities",
+        "description": "Implement 2-3 character classes (Speedster, Bruiser, Balanced) with different stats and abilities",
+        "details": "Create character selection UI in client: dropdown/buttons for class selection on connection. Define classes in server.js: Speedster (speed: 1.3x, health: 80, dash cooldown: 0.3s), Bruiser (damage: 1.5x, health: 120, speed: 0.8x), Balanced (default stats). Modify player spawn to include class-specific stats. Add unique abilities: Speedster gets triple jump, Bruiser gets charge attack (hold to increase damage), Balanced gets shield ability. Store class in player object, validate abilities server-side.",
+        "testStrategy": "Verify each class has distinct feel, abilities work as intended, stats are properly applied. Test multiplayer matches with different class combinations.",
+        "priority": "medium",
+        "dependencies": [
+          4
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Character Selection UI and Class Definition System",
+            "description": "Create character selection interface and define class properties in both client and server",
+            "dependencies": [],
+            "details": "Implement character selection UI in client with dropdown/buttons for class selection on connection. Define class system in server.js with three classes: Speedster (speed: 1.3x, health: 80, dash cooldown: 0.3s), Bruiser (damage: 1.5x, health: 120, speed: 0.8x), and Balanced (default stats). Create class selection screen that appears before joining game. Store selected class in player object and broadcast to other clients. Add visual indicators for different classes in game.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Class-Specific Stat Application and Balance Implementation",
+            "description": "Apply class-specific statistics to player objects and implement game balance mechanics",
+            "dependencies": [
+              1
+            ],
+            "details": "Modify player spawn system to apply class-specific stats (health, speed, damage multipliers). Implement stat scaling system that affects movement speed, jump height, attack damage, and health pools. Add balance validation to ensure no class is overpowered. Create stat display UI showing current class bonuses/penalties. Implement health regeneration rates that vary by class. Add visual feedback for stat differences (health bars, speed trails, damage indicators).",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Unique Ability Mechanics for Each Class",
+            "description": "Implement distinct special abilities for Speedster, Bruiser, and Balanced classes",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement Speedster abilities: triple jump mechanic and dash ability with 0.3s cooldown. Create Bruiser charge attack: hold button to increase damage up to 1.5x multiplier with charging animation. Add Balanced class shield ability: temporary damage reduction with visual shield effect. Implement ability input handling and visual feedback. Add ability cooldown timers and UI indicators. Create particle effects and animations for each unique ability. Ensure abilities work correctly in multiplayer environment.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Server-Side Validation and Ability Cooldown Management",
+            "description": "Implement authoritative server validation for all class abilities and cooldown systems",
+            "dependencies": [
+              3
+            ],
+            "details": "Add server-side validation for all class abilities to prevent cheating. Implement cooldown management system that tracks ability usage timestamps per player. Validate ability prerequisites (e.g., grounded state for jumps, charge time for Bruiser attacks). Create anti-cheat measures for ability spam and stat manipulation. Implement server reconciliation for ability effects. Add logging system for ability usage monitoring. Ensure all ability effects are properly synchronized across all clients with authoritative server state.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Implement Fall-Off Death System with Lives",
+        "description": "Add death boundaries below platforms where players lose lives and respawn system",
+        "details": "Define death line (y > 600) in both client and server. In server game loop: check player positions, deduct life when falling below boundary. Implement respawn system: reset position to spawn point (x: 400, y: 100), brief invincibility (2s). Track lives in player object (start with 3). Add elimination logic: remove player when lives = 0, check for last player standing to end match. Client-side: show lives counter, death animation, respawn countdown. Broadcast match end event with winner.",
+        "testStrategy": "Test players lose lives when falling off, respawn correctly, match ends with proper winner. Verify invincibility period works and lives display accurately across clients.",
+        "priority": "high",
+        "dependencies": [
+          3
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Death Boundary Detection and Life Management",
+            "description": "Create server-side death boundary checking system that detects when players fall below the death line (y > 600) and manages player life deduction with proper state tracking",
+            "dependencies": [],
+            "details": "Add death boundary constant (DEATH_Y = 600) in server.js. In game loop, check each player's position against boundary. When player falls below, deduct one life from player.lives (initialize to 3). Track death state to prevent multiple life deductions per fall. Emit death event to all clients with player ID and remaining lives. Reset death state when player respawns above boundary.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Create Respawn System with Positioning and Invincibility",
+            "description": "Implement respawn mechanics that teleport dead players to spawn point with temporary invincibility period to prevent spawn camping",
+            "dependencies": [
+              1
+            ],
+            "details": "Add respawn function that resets player position to spawn point (x: 400, y: 100). Implement invincibility system: set player.invincible = true for 2 seconds after respawn. During invincibility, ignore all damage and combat interactions. Add visual indicator (blinking sprite) on client-side. Automatically trigger respawn 1 second after death detection. Sync respawn state across all clients via Socket.IO.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Develop Match End Logic and Winner Determination",
+            "description": "Create elimination system that removes players when lives reach zero and determines match winner when only one player remains",
+            "dependencies": [
+              1
+            ],
+            "details": "Add elimination logic: when player.lives reaches 0, set player.eliminated = true and remove from active game loop. Track remaining active players count. When only one player remains active, trigger match end event. Determine winner as last surviving player. Broadcast match end event with winner ID and final standings. Implement match reset functionality to start new round. Add spectator mode for eliminated players.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Build Client-Side UI for Lives Display and Death Animations",
+            "description": "Create user interface elements and animations to display player lives, death effects, and respawn countdown with synchronized visual feedback",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Add lives counter UI element showing current lives for each player. Implement death animation sequence: screen shake, fade effect, explosion particles. Create respawn countdown timer (3-2-1) with visual overlay. Add match end screen showing winner and final results. Implement spectator UI for eliminated players. Use Phaser tweens for smooth animations. Ensure UI updates are synchronized with server events and properly handle network delays.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Create Item Spawn and Pickup System",
+        "description": "Add random item spawns on platforms with pickup mechanics and temporary effects",
+        "details": "Create items array in server.js with types: health pack (+30 HP), speed boost (1.5x speed for 10s), damage boost (1.3x damage for 15s). Implement random spawning: every 15-30s, spawn item on random platform. Add pickup collision detection: check distance < 30px between player and item. Apply item effects with timers, remove item from world on pickup. Client-side: render item sprites, pickup animations, effect indicators (speed lines, damage glow). Sync item state via gameState emission.",
+        "testStrategy": "Verify items spawn randomly, pickup works reliably, effects apply correctly with proper duration. Test multiple players competing for same item.",
+        "priority": "low",
+        "dependencies": [
+          6
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Item Definition and Random Spawning System",
+            "description": "Create items array with health pack, speed boost, and damage boost definitions. Implement random spawning logic that spawns items on random platforms every 15-30 seconds with proper timing controls.",
+            "dependencies": [],
+            "details": "Create items array in server.js with types: health pack (+30 HP), speed boost (1.5x speed for 10s), damage boost (1.3x damage for 15s). Implement random spawning timer that triggers every 15-30 seconds to spawn item on random platform from platforms array. Add item ID generation and position calculation based on platform coordinates.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Create Pickup Collision Detection and Item Removal",
+            "description": "Implement collision detection between players and items using distance calculation. Add item removal mechanics when pickup occurs and sync removal across all clients.",
+            "dependencies": [
+              1
+            ],
+            "details": "Add pickup collision detection in server.js: check distance < 30px between player position and item position. Implement item removal from items array on pickup. Broadcast item removal to all clients via Socket.IO. Handle edge cases like multiple players attempting to pickup same item simultaneously.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Apply Item Effects and Client-Side Visual Feedback",
+            "description": "Implement item effect application with duration tracking and timers. Add client-side visual feedback including item sprites, pickup animations, and effect indicators.",
+            "dependencies": [
+              2
+            ],
+            "details": "Apply item effects with timers: health pack increases HP by 30, speed boost multiplies speed by 1.5x for 10s, damage boost multiplies damage by 1.3x for 15s. Store effect timers in player object. Client-side: render item sprites on platforms, show pickup animations, add effect indicators (speed lines for speed boost, damage glow for damage boost). Sync item state and effects via gameState emission.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Implement Room/Lobby System for 8 Players",
+        "description": "Add lobby system using Socket.IO rooms to organize matches with up to 8 players per room",
+        "details": "Use Socket.IO rooms: socket.join(roomId) on connection. Add room selection UI: input field for room name or auto-join. Maintain separate players object per room in server.js using Map<roomId, players>. Modify all broadcasts to use io.to(roomId).emit() instead of io.emit(). Add room management: auto-start match when 2+ players, max 8 players per room. Implement room list display showing active rooms and player counts. Add leave room functionality and cleanup empty rooms.",
+        "testStrategy": "Test multiple rooms simultaneously, verify broadcasts only go to correct room, 8-player limit enforced. Test room cleanup when players disconnect.",
+        "priority": "medium",
+        "dependencies": [
+          7
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Socket.IO Room Management and Player Organization",
+            "description": "Set up Socket.IO room infrastructure with player organization using Map data structure for room-based player management",
+            "dependencies": [],
+            "details": "Modify server.js to use Map<roomId, players> instead of global players object. Implement socket.join(roomId) on connection. Add room-specific player tracking with methods for adding/removing players from rooms. Create room state management including player counts and room metadata. Implement room validation and player limit enforcement (max 8 players per room).",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Create Room Selection UI and Auto-Join Functionality",
+            "description": "Build client-side interface for room selection with input field and auto-join capabilities",
+            "dependencies": [
+              1
+            ],
+            "details": "Add room selection UI to client with input field for room name or auto-join button. Implement room list display showing active rooms and current player counts. Add join room functionality that communicates with server via Socket.IO. Create auto-join logic that places players in available rooms with space. Handle room full scenarios and provide user feedback.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Modify Broadcast System for Room-Specific Communication",
+            "description": "Update all Socket.IO broadcasts throughout the codebase to use room-specific communication instead of global broadcasts",
+            "dependencies": [
+              1
+            ],
+            "details": "Replace all io.emit() calls with io.to(roomId).emit() in server.js. Update game state broadcasts, player movement, combat events, and match events to be room-specific. Modify handleMovement, handleCombat, and other game functions to include roomId parameter. Ensure all client updates only reach players in the same room. Test broadcast isolation between different rooms.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Implement Room Lifecycle Management and Cleanup",
+            "description": "Add comprehensive room lifecycle management including auto-start, cleanup, and player limit enforcement",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "details": "Implement auto-start match logic when 2+ players join a room. Add room cleanup functionality to remove empty rooms when all players disconnect. Create leave room functionality with proper player removal and room state updates. Implement player limit enforcement (max 8 players) with queue system if needed. Add room persistence and cleanup timers for abandoned rooms. Handle edge cases like host leaving and room migration.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Add User Authentication System",
+        "description": "Implement basic user authentication to support player progression and persistent data",
+        "details": "Add JWT-based authentication: install jsonwebtoken npm package. Create login/register UI with username/password fields. Implement auth middleware in server.js to verify tokens on socket connection. Store user sessions in memory initially (upgrade to Redis later). Add socket authentication: verify JWT token in socket.io connection middleware. Create user object structure: {userId, username, socketId, roomId}. Handle authentication errors gracefully with reconnection logic.",
+        "testStrategy": "Test user registration/login flow, verify authenticated connections only, handle invalid tokens properly. Test session persistence across reconnections.",
+        "priority": "medium",
+        "dependencies": [
+          8
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "JWT Token Generation and Validation Setup",
+            "description": "Install jsonwebtoken package and implement JWT token generation for user authentication and validation middleware",
+            "dependencies": [],
+            "details": "Install jsonwebtoken npm package. Create JWT utility functions for token generation with user payload (userId, username). Implement token validation middleware with proper error handling for expired/invalid tokens. Set up JWT secret key configuration and token expiration settings (24h default). Create token refresh mechanism for seamless user experience.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Login/Register UI and User Input Handling",
+            "description": "Create authentication forms with username/password fields and implement client-side input validation and submission",
+            "dependencies": [],
+            "details": "Design login/register UI forms with username and password input fields. Add client-side validation for username (min 3 chars, alphanumeric) and password (min 6 chars). Implement form submission handlers that send credentials to server endpoints. Add loading states and form feedback messages. Create toggle between login and register modes with smooth transitions.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Socket.IO Authentication Middleware Implementation",
+            "description": "Implement authentication middleware for Socket.IO connections to verify JWT tokens on connection",
+            "dependencies": [
+              1
+            ],
+            "details": "Create Socket.IO authentication middleware that intercepts connection attempts. Verify JWT tokens from client handshake auth headers. Extract user information from valid tokens and attach to socket object. Reject connections with invalid/missing tokens with appropriate error messages. Implement token-based socket identification for user session management.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Session Management and User Object Structure",
+            "description": "Implement in-memory session storage and define user object structure for authenticated players",
+            "dependencies": [
+              3
+            ],
+            "details": "Create user object structure: {userId, username, socketId, roomId, joinTime, isAuthenticated}. Implement in-memory session storage using Map for active users. Add session lifecycle management: create on login, update on room changes, cleanup on disconnect. Implement user lookup functions by userId and socketId. Add session persistence across socket reconnections using userId mapping.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Error Handling and Reconnection Logic",
+            "description": "Implement comprehensive error handling for authentication failures and automatic reconnection logic",
+            "dependencies": [
+              2,
+              4
+            ],
+            "details": "Add authentication error handling: invalid credentials, expired tokens, network failures. Implement client-side reconnection logic with exponential backoff (1s, 2s, 4s intervals). Handle token refresh on reconnection attempts. Add user feedback for authentication states: connecting, authenticated, failed, reconnecting. Implement graceful degradation when authentication service is unavailable.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Setup MongoDB Database for Player Progression",
+        "description": "Integrate MongoDB database to store player stats, progression, and match history",
+        "details": "Install mongoose npm package, setup MongoDB Atlas free tier connection. Create user schema: {userId, username, level, xp, wins, losses, gamesPlayed, createdAt}. Create match schema: {matchId, roomId, players, winner, duration, endedAt}. Implement database operations: saveUser(), updateStats(), getPlayerStats(). Add connection handling with retry logic and error handling. Create indexes on userId and username for performance. Implement data validation and sanitization.",
+        "testStrategy": "Test database connection, user creation/updates work correctly, match data saves properly. Verify data persistence across server restarts and handle connection failures gracefully.",
+        "priority": "medium",
+        "dependencies": [
+          9
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "MongoDB Connection and Schema Design",
+            "description": "Set up MongoDB Atlas connection and design database schemas for user and match data",
+            "dependencies": [],
+            "details": "Install mongoose npm package and configure MongoDB Atlas free tier connection. Create user schema with fields: userId, username, level, xp, wins, losses, gamesPlayed, createdAt. Create match schema with fields: matchId, roomId, players, winner, duration, endedAt. Set up proper data types, required fields, and default values for both schemas.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Database Operations and CRUD Functionality",
+            "description": "Implement core database operations for user and match data management",
+            "dependencies": [
+              1
+            ],
+            "details": "Create database operation functions: saveUser() for new user creation, updateStats() for player progression updates, getPlayerStats() for retrieving user data. Implement match data operations: saveMatch() for storing completed games, getMatchHistory() for retrieving player's past matches. Add proper error handling and data sanitization for all CRUD operations.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Connection Handling, Error Management, and Retry Logic",
+            "description": "Implement robust database connection management with error handling and retry mechanisms",
+            "dependencies": [
+              1
+            ],
+            "details": "Set up connection retry logic with exponential backoff for MongoDB connection failures. Implement graceful error handling for database operations with proper logging. Add connection pooling configuration and timeout settings. Create health check functionality to monitor database connectivity and automatic reconnection on connection loss.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Data Validation, Indexing, and Performance Optimization",
+            "description": "Implement data validation, create database indexes, and optimize performance",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Add comprehensive data validation for user input and match data before database operations. Create indexes on userId and username fields for improved query performance. Implement query optimization techniques and add database performance monitoring. Set up data sanitization to prevent injection attacks and ensure data integrity.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Implement Player Progression and Leveling System",
+        "description": "Add XP gain, leveling up, and progression tracking based on match performance",
+        "details": "Define XP rewards: win (+100 XP), participation (+25 XP), combo bonus (+5 XP per combo). Implement leveling formula: level = Math.floor(Math.sqrt(xp / 100)). Add progression events: emit levelUp event to client, unlock rewards at certain levels. Create progression UI: XP bar, level display, stats overview. Track additional stats: damage dealt, combos performed, survival time. Add achievements system: first win, combo master, survivor. Update database after each match with new stats.",
+        "testStrategy": "Verify XP calculation is correct, level ups trigger properly, stats track accurately. Test progression UI updates in real-time and persists between sessions.",
+        "priority": "low",
+        "dependencies": [
+          10
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "XP calculation and reward system implementation",
+            "description": "Implement the core XP calculation logic and reward distribution system based on match performance including win bonuses, participation rewards, and combo multipliers",
+            "dependencies": [],
+            "details": "Create XP calculation functions: win (+100 XP), participation (+25 XP), combo bonus (+5 XP per combo). Implement server-side XP tracking in player objects. Add match performance metrics collection (damage dealt, combos performed, survival time). Create XP reward distribution logic that triggers after match completion. Integrate with existing combat and match systems to capture performance data.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Leveling formula and progression tracking",
+            "description": "Implement the mathematical leveling system using square root formula and create progression tracking mechanisms",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement leveling formula: level = Math.floor(Math.sqrt(xp / 100)). Create progression tracking system that monitors XP accumulation and level changes. Add level-up detection logic that triggers when XP threshold is crossed. Implement progression persistence in database to maintain player stats between sessions. Create progression events system for level-up notifications.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Achievement system and unlock mechanics",
+            "description": "Create achievement system with unlock conditions and reward mechanics for various gameplay milestones",
+            "dependencies": [
+              2
+            ],
+            "details": "Design achievement categories: first win, combo master, survivor, damage dealer. Implement achievement tracking logic that monitors player actions and progress. Create unlock mechanics that trigger when achievement conditions are met. Add achievement rewards system that grants bonus XP or unlocks. Implement achievement persistence in database and notification system for unlocks.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Progression UI and real-time updates",
+            "description": "Create user interface components for progression display and implement real-time updates for XP, levels, and achievements",
+            "dependencies": [
+              3
+            ],
+            "details": "Design and implement XP bar with animated fill progression. Create level display component showing current level and progress to next. Build stats overview panel displaying damage dealt, combos, survival time. Implement real-time UI updates using Socket.IO events for XP gains and level-ups. Add achievement notification popups and achievement gallery. Create responsive progression UI that works across different screen sizes.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Add Redis for Session Management and Caching",
+        "description": "Integrate Redis for improved session handling, caching, and multi-server scalability preparation",
+        "details": "Install redis and socket.io-redis npm packages. Setup Redis connection with connection pooling and error handling. Implement session caching: store user sessions in Redis with TTL (24h). Add Socket.IO Redis adapter for multi-server support: io.adapter(redisAdapter({host: 'localhost', port: 6379})). Cache frequently accessed data: player stats, room information. Implement pub/sub for cross-room notifications. Add Redis health checks and fallback to memory storage if Redis unavailable.",
+        "testStrategy": "Test session persistence in Redis, verify Socket.IO adapter works correctly, cache hit/miss rates are reasonable. Test failover behavior when Redis is unavailable.",
+        "priority": "low",
+        "dependencies": [
+          11
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Redis Connection Setup and Configuration",
+            "description": "Install Redis packages and establish secure connection with proper configuration, connection pooling, and error handling",
+            "dependencies": [],
+            "details": "Install redis and socket.io-redis npm packages. Configure Redis connection with host, port, password, and database selection. Implement connection pooling with retry logic, timeout settings, and reconnection strategies. Add environment-based configuration for development/production Redis instances. Set up proper error handling for connection failures and network issues.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Session Caching Implementation with TTL Management",
+            "description": "Implement Redis-based session storage with automatic expiration and session lifecycle management",
+            "dependencies": [
+              1
+            ],
+            "details": "Create session storage functions to store user sessions in Redis with 24-hour TTL. Implement session retrieval, update, and deletion operations. Add session validation and refresh mechanisms. Handle session expiration gracefully with automatic cleanup. Implement session data serialization/deserialization for complex objects. Add session migration from memory to Redis storage.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Socket.IO Redis Adapter for Multi-Server Support",
+            "description": "Configure Socket.IO Redis adapter to enable horizontal scaling and cross-server communication",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement Socket.IO Redis adapter configuration with io.adapter(redisAdapter({host: 'localhost', port: 6379})). Set up pub/sub channels for cross-server room management and event broadcasting. Configure adapter for sticky sessions and load balancing compatibility. Implement cross-server room synchronization and player state management. Add adapter health monitoring and failover logic.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Data Caching Strategy for Frequently Accessed Information",
+            "description": "Implement intelligent caching system for player stats, room information, and game data with cache invalidation",
+            "dependencies": [
+              1
+            ],
+            "details": "Design caching strategy for player stats, room information, and leaderboards with appropriate TTL values. Implement cache-aside pattern with automatic cache warming and invalidation. Add cache hit/miss tracking and performance monitoring. Create cached data structures for frequently accessed game state. Implement cache eviction policies and memory management. Add cache synchronization for real-time data updates.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Health Checks and Fallback Mechanisms",
+            "description": "Implement Redis health monitoring, graceful degradation, and fallback to memory storage when Redis is unavailable",
+            "dependencies": [
+              2,
+              3,
+              4
+            ],
+            "details": "Create Redis health check endpoints and monitoring functions. Implement graceful fallback to in-memory storage when Redis is unavailable. Add automatic Redis reconnection with exponential backoff. Create health status reporting and alerting mechanisms. Implement data synchronization when Redis comes back online. Add performance metrics tracking for Redis operations and fallback scenarios.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "title": "Optimize Game Loop Performance and Broadcasting",
+        "description": "Profile and optimize the 60fps game loop, implement delta updates and performance monitoring",
+        "details": "Add performance profiling using console.time() around game loop sections. Implement delta updates: only broadcast changed player data instead of full state. Add performance metrics: track loop execution time, broadcast frequency, memory usage. Optimize collision detection: use spatial partitioning for large player counts. Implement adaptive tick rate: reduce to 30fps if server load is high. Add performance monitoring dashboard showing real-time metrics. Use object pooling for frequently created/destroyed objects.",
+        "testStrategy": "Measure game loop performance before/after optimizations, verify delta updates reduce bandwidth, monitor memory usage over time. Test with maximum 8 players per room under load.",
+        "priority": "medium",
+        "dependencies": [
+          12
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Performance Profiling and Metrics Collection",
+            "description": "Implement comprehensive performance profiling system to measure game loop execution time, memory usage, and identify bottlenecks",
+            "dependencies": [],
+            "details": "Add console.time() and console.timeEnd() around critical game loop sections. Implement performance metrics tracking for loop execution time, broadcast frequency, memory usage, and CPU utilization. Create performance data collection system that samples metrics every second and stores historical data. Add memory leak detection by monitoring object creation/destruction patterns. Implement frame time analysis to identify performance spikes and their causes.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Delta Update Implementation for Reduced Bandwidth",
+            "description": "Implement delta updates to broadcast only changed player data instead of full game state, reducing network bandwidth usage",
+            "dependencies": [
+              1
+            ],
+            "details": "Create state comparison system to detect changes in player positions, health, and status. Implement delta compression algorithm that only sends modified properties. Add state versioning to track changes between updates. Create efficient data structures for storing previous states and calculating deltas. Implement fallback to full state updates when delta size exceeds threshold or after connection issues.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Collision Detection Optimization and Spatial Partitioning",
+            "description": "Optimize collision detection using spatial partitioning techniques to handle large player counts efficiently",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement spatial partitioning using quadtree or grid-based system to reduce collision checks from O(n²) to O(n log n). Create spatial hash map for fast neighbor queries. Optimize broad-phase collision detection by only checking nearby objects. Implement efficient bounding box calculations and early rejection tests. Add dynamic spatial subdivision based on player density in different areas of the game world.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Adaptive Tick Rate and Load Management",
+            "description": "Implement adaptive tick rate system that adjusts game loop frequency based on server load and performance metrics",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "details": "Create load monitoring system that tracks CPU usage, memory consumption, and network bandwidth. Implement adaptive tick rate algorithm that reduces from 60fps to 30fps when server load exceeds thresholds. Add priority-based update system where critical updates (player movement) maintain higher frequency than non-critical updates (UI elements). Implement load balancing strategies and graceful degradation when approaching capacity limits.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Object Pooling and Memory Optimization",
+            "description": "Implement object pooling system and memory optimization techniques to reduce garbage collection and improve performance",
+            "dependencies": [
+              1
+            ],
+            "details": "Create object pools for frequently created/destroyed objects like bullets, particles, and temporary game entities. Implement memory-efficient data structures and reduce object allocations in hot code paths. Add garbage collection monitoring and optimization strategies. Implement efficient string handling and reduce string concatenation in performance-critical sections. Create memory usage profiling tools to identify memory leaks and optimization opportunities.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Performance Monitoring Dashboard",
+            "description": "Create real-time performance monitoring dashboard displaying key metrics, alerts, and system health indicators",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "details": "Build web-based dashboard showing real-time performance metrics including FPS, memory usage, network bandwidth, and player counts. Implement alert system for performance threshold violations. Create historical performance graphs and trend analysis. Add system health indicators with color-coded status displays. Implement performance comparison tools to measure optimization effectiveness and regression detection.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 14,
+        "title": "Implement Client-Side Prediction and Lag Compensation",
+        "description": "Add client-side prediction for smooth gameplay and server reconciliation for authoritative state",
+        "details": "Implement client-side prediction: predict movement, jumping, and attacks locally before server confirmation. Add input buffering: queue inputs during network delays. Implement server reconciliation: compare predicted vs actual positions, smoothly interpolate corrections. Add lag compensation: timestamp inputs, replay game state for hit detection. Use Phaser's interpolation for smooth position updates. Add network quality indicators: ping display, packet loss detection. Implement rollback for critical state mismatches.",
+        "testStrategy": "Test gameplay feels smooth with simulated network delays, verify server corrections don't cause jarring movement, hit detection works accurately with lag compensation.",
+        "priority": "high",
+        "dependencies": [
+          13
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Client-Side Movement and Action Prediction",
+            "description": "Create client-side prediction system for immediate response to player inputs including movement, jumping, and combat actions",
+            "dependencies": [],
+            "details": "Implement local prediction for movement (WASD/arrow keys), jumping (spacebar), and attack actions (mouse clicks) in client-side game loop. Create predictive state management that applies inputs immediately without waiting for server confirmation. Store predicted positions and states in client memory. Implement prediction for physics-based movement including gravity, velocity, and collision detection. Add prediction validation to ensure client predictions don't exceed game rules (jump limits, movement bounds). Use Phaser's physics system for local calculations matching server-side physics.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Develop Input Buffering and Queue Management System",
+            "description": "Create robust input buffering system to handle network delays and ensure no input loss during lag spikes",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement input queue using circular buffer to store timestamped inputs (movement, jumps, attacks). Add input sequence numbering for tracking and acknowledgment. Create buffer management with configurable size (default 60 inputs for 1 second at 60fps). Implement input compression to reduce bandwidth usage. Add input validation and sanitization before queuing. Handle buffer overflow scenarios by dropping oldest inputs. Implement input replay system for server reconciliation. Add debug logging for input queue monitoring.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Build Server Reconciliation and State Correction System",
+            "description": "Implement authoritative server validation and smooth client state correction when predictions differ from server reality",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Create server-side input validation and authoritative state calculation. Implement state comparison between client predictions and server reality. Add smooth interpolation for position corrections using Phaser's tweening system. Create reconciliation algorithm that corrects client state without jarring movement. Implement server acknowledgment system for processed inputs. Add conflict resolution for simultaneous actions (attacks, jumps). Store server snapshots for rollback scenarios. Implement gradual correction over multiple frames to maintain smooth gameplay.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Implement Lag Compensation with Timestamped Inputs",
+            "description": "Create lag compensation system using input timestamps and server-side state rewinding for accurate hit detection",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Add high-precision timestamps to all inputs using performance.now(). Implement server-side state history storage (last 1 second of game states). Create lag compensation algorithm that rewinds server state to input timestamp for hit detection. Implement client-side RTT (round-trip time) measurement and tracking. Add timestamp synchronization between client and server using NTP-like protocol. Create compensated hit detection that accounts for network delay. Implement input delay adjustment based on network conditions. Add validation to prevent timestamp manipulation exploits.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Develop Smooth Interpolation and Rollback Mechanisms",
+            "description": "Create interpolation system for smooth visual updates and rollback functionality for correcting mispredictions",
+            "dependencies": [
+              3,
+              4
+            ],
+            "details": "Implement entity interpolation using Phaser's tweening system for smooth position updates. Create rollback system that can revert client state to previous snapshots. Add visual smoothing for server corrections using cubic interpolation. Implement separate visual and logical positions for smooth rendering during corrections. Create rollback buffer storing client states with input sequence numbers. Add rollback triggers for significant server corrections. Implement fast-forward replay after rollback to current state. Add visual indicators for rollback events during development/debugging.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Create Network Quality Indicators and Monitoring System",
+            "description": "Implement comprehensive network monitoring with visual indicators for ping, packet loss, and connection quality",
+            "dependencies": [
+              4,
+              5
+            ],
+            "details": "Add real-time ping measurement using Socket.IO ping/pong events. Implement packet loss detection by tracking sent vs acknowledged packets. Create network quality UI indicators (green/yellow/red status). Add bandwidth usage monitoring for sent/received data. Implement connection stability tracking with disconnect/reconnect detection. Create adaptive quality settings based on network conditions. Add network statistics display (ping, packet loss %, bandwidth). Implement warning system for poor network conditions. Add network quality logging for debugging and optimization.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 15,
+        "title": "Add Comprehensive Testing and Error Handling",
+        "description": "Implement robust error handling, logging, and automated testing for multiplayer scenarios",
+        "details": "Add comprehensive error handling: try-catch blocks around critical sections, graceful degradation for network issues. Implement structured logging using winston: separate log levels for development/production. Add automated testing: unit tests for game logic, integration tests for Socket.IO events. Create multiplayer test scenarios: simulate disconnections, network delays, concurrent actions. Add monitoring: track error rates, performance metrics, user engagement. Implement graceful shutdown procedures and cleanup routines. Add client-side error reporting and recovery mechanisms.",
+        "testStrategy": "Run automated test suite covering all game mechanics, simulate various failure scenarios, verify error handling doesn't crash server. Test recovery from network issues and server restarts.",
+        "priority": "medium",
+        "dependencies": [
+          14
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Comprehensive Error Handling and Graceful Degradation",
+            "description": "Add try-catch blocks around critical sections, implement graceful degradation for network issues, and create fallback mechanisms for various failure scenarios",
+            "dependencies": [],
+            "details": "Wrap all Socket.IO event handlers in try-catch blocks, implement error boundaries for game logic functions, add graceful degradation for network disconnections, create fallback UI states for offline mode, implement retry mechanisms for failed operations, add error recovery procedures for corrupted game state",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Set Up Structured Logging System with Winston",
+            "description": "Configure winston logger with different log levels, file rotation, and structured logging for development and production environments",
+            "dependencies": [],
+            "details": "Install and configure winston with multiple transports (console, file, error file), set up log levels (error, warn, info, debug), implement log rotation and archiving, create structured log format with timestamps and metadata, add request/response logging middleware, configure different logging strategies for development vs production",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Create Automated Testing Suite for Game Logic and Multiplayer",
+            "description": "Implement comprehensive unit and integration tests covering game mechanics, Socket.IO events, and multiplayer scenarios",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Set up Jest testing framework, create unit tests for game logic functions (movement, combat, collision), implement integration tests for Socket.IO events, create multiplayer test scenarios simulating disconnections and network delays, add test coverage for concurrent player actions, implement mock Socket.IO clients for testing, create automated test runners for CI/CD",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Implement Monitoring and Metrics Collection",
+            "description": "Set up monitoring system to track error rates, performance metrics, user engagement, and system health indicators",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement metrics collection for error rates, response times, and user actions, set up performance monitoring for server resources (CPU, memory, network), create dashboards for real-time monitoring, add alerting for critical errors and performance degradation, implement user engagement tracking (session duration, actions per minute), set up health check endpoints for load balancers",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Implement Graceful Shutdown and Cleanup Procedures",
+            "description": "Create proper shutdown procedures to handle server restarts, clean up resources, and maintain data integrity during shutdown",
+            "dependencies": [
+              1,
+              2,
+              4
+            ],
+            "details": "Implement SIGTERM and SIGINT signal handlers, create graceful shutdown sequence for Socket.IO connections, add cleanup procedures for active games and player sessions, implement database connection cleanup, create backup procedures for in-memory game state, add timeout mechanisms for shutdown process, implement restart recovery procedures to restore game state",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "created": "2025-07-16T04:48:20.939Z",
+      "updated": "2025-07-16T06:06:46.172Z",
+      "description": "Tasks for master context"
+    }
+  }
+}

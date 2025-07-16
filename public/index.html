@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fighter Game</title>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        #game-container {
+            border: 2px solid #333;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 16px;
+            z-index: 1000;
+        }
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            font-size: 14px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div id="player-count">Players: 0</div>
+        <div id="health">Health: 100</div>
+    </div>
+    <div id="game-container"></div>
+    <div id="controls">
+        <div>Controls:</div>
+        <div>Left/Right: Move</div>
+        <div>Up: Jump</div>
+        <div>Space: Attack</div>
+        <div>Z: Block</div>
+        <div>P: Toggle Prediction</div>
+    </div>
+    
+    <div id="prediction-debug" style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px;">
+        <div>Prediction: <span id="prediction-status">ON</span></div>
+        <div>Position Error: <span id="position-error">0.0</span>px</div>
+        <div>Buffer Size: <span id="buffer-size">0</span></div>
+        <div>Last Update: <span id="last-update">0</span>ms ago</div>
+        <div>Input Status: <span id="input-status">Normal</span></div>
+    </div>
+    
+    <script>
+        // Phaser game configuration
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 600,
+            parent: 'game-container',
+            backgroundColor: '#2c5f2d',
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    gravity: { y: 0 }, // Server handles gravity
+                    debug: false // No client-side physics bodies to debug
+                }
+            },
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            }
+        };
+
+        // Create the game
+        const game = new Phaser.Game(config);
+
+        let cursors;
+        let socket;
+        let spaceKey;
+        let zKey;
+        const playerSprites = {};
+        const playerHealthBars = {};
+        const playerAttackEffects = {};
+        let myPlayerId = null;
+        let gameState = { players: {} };
+        
+        // Client-side prediction variables
+        let clientPlayerState = null;
+        let inputBuffer = [];
+        let lastServerUpdate = 0;
+        let predictionEnabled = true;
+        const PHYSICS_CONSTANTS = {
+            GRAVITY: 800,
+            GROUND_Y: 560,
+            FRAME_RATE: 60,
+            JUMP_VELOCITY_SINGLE: -500,
+            JUMP_VELOCITY_DOUBLE: -400
+        };
+
+        function preload() {
+            // Create simple colored rectangles for sprites
+            this.add.graphics()
+                .fillStyle(0x333333)
+                .fillRect(0, 0, 800, 600);
+        }
+
+        function create() {
+            // Create ground platform (visual only - server handles physics)
+            this.add.rectangle(400, 580, 800, 40, 0x8B4513);
+            
+            // Add some background elements
+            this.add.rectangle(100, 100, 20, 100, 0x654321); // Tree trunk
+            this.add.circle(100, 80, 40, 0x228B22); // Tree leaves
+            this.add.rectangle(700, 120, 20, 80, 0x654321); // Tree trunk
+            this.add.circle(700, 100, 35, 0x228B22); // Tree leaves
+            
+            cursors = this.input.keyboard.createCursorKeys();
+            spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+            zKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
+            
+            // Prediction toggle key
+            const pKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
+            pKey.on('down', () => {
+                predictionEnabled = !predictionEnabled;
+                if (!predictionEnabled) {
+                    clientPlayerState = null; // Reset client state
+                }
+                updateDebugPanel();
+            });
+            
+            socket = io();
+            myPlayerId = socket.id;
+            
+            socket.on('gameState', (newGameState) => {
+                gameState = newGameState;
+                
+                // Client-side prediction reconciliation
+                if (predictionEnabled && myPlayerId) {
+                    reconcileWithServer(newGameState);
+                }
+                
+                updatePlayerCount();
+                updatePlayerSprites.call(this);
+                updateUI();
+            });
+            
+            socket.on('connect', () => {
+                myPlayerId = socket.id;
+            });
+            
+            // Listen for jump events for visual effects
+            socket.on('playerJump', (jumpEvent) => {
+                handleJumpEvent.call(this, jumpEvent);
+            });
+        }
+
+        function updatePlayerSprites() {
+            // Remove sprites for disconnected players
+            for (const id in playerSprites) {
+                if (!gameState.players[id]) {
+                    playerSprites[id].destroy();
+                    playerHealthBars[id].background.destroy();
+                    playerHealthBars[id].fill.destroy();
+                    if (playerAttackEffects[id]) {
+                        playerAttackEffects[id].destroy();
+                    }
+                    delete playerSprites[id];
+                    delete playerHealthBars[id];
+                    delete playerAttackEffects[id];
+                }
+            }
+            
+            // Update or create sprites for connected players
+            for (const id in gameState.players) {
+                const player = gameState.players[id];
+                
+                if (!playerSprites[id]) {
+                    // Create new player sprite (server handles all physics)
+                    const color = id === myPlayerId ? 0xff0000 : 0x0000ff;
+                    playerSprites[id] = this.add.rectangle(player.x, player.y, 40, 60, color);
+                    
+                    // Create health bar background
+                    const healthBarBg = this.add.rectangle(player.x, player.y - 40, 50, 8, 0x333333);
+                    const healthBarFill = this.add.rectangle(player.x, player.y - 40, 48, 6, 0x00ff00);
+                    
+                    playerHealthBars[id] = {
+                        background: healthBarBg,
+                        fill: healthBarFill
+                    };
+                    
+                    // Create attack effect (initially invisible)
+                    playerAttackEffects[id] = this.add.circle(player.x, player.y, 35, 0xffff00, 0.6);
+                    playerAttackEffects[id].setVisible(false);
+                } else {
+                    // Update existing sprite position (server handles physics)
+                    // Skip position update for local player if prediction is enabled
+                    if (!(predictionEnabled && id === myPlayerId)) {
+                        playerSprites[id].setPosition(player.x, player.y);
+                    }
+                    
+                    // Update player color based on state
+                    let playerColor = id === myPlayerId ? 0xff0000 : 0x0000ff;
+                    if (player.blocking) {
+                        playerColor = 0xffff00; // Yellow when blocking
+                    } else if (player.health <= 0) {
+                        playerColor = 0x666666; // Gray when dead
+                    }
+                    playerSprites[id].setFillStyle(playerColor);
+                    
+                    // Update health bar position and fill
+                    // Use predicted position for local player, server position for others
+                    const healthBarX = (predictionEnabled && id === myPlayerId && clientPlayerState) ? 
+                        clientPlayerState.x : player.x;
+                    const healthBarY = (predictionEnabled && id === myPlayerId && clientPlayerState) ? 
+                        clientPlayerState.y - 40 : player.y - 40;
+                    
+                    playerHealthBars[id].background.x = healthBarX;
+                    playerHealthBars[id].background.y = healthBarY;
+                    playerHealthBars[id].fill.x = healthBarX;
+                    playerHealthBars[id].fill.y = healthBarY;
+                    
+                    // Update health bar width based on health
+                    const healthPercent = player.health / 100;
+                    playerHealthBars[id].fill.scaleX = healthPercent;
+                    
+                    // Update health bar color based on health
+                    if (healthPercent > 0.6) {
+                        playerHealthBars[id].fill.setFillStyle(0x00ff00);
+                    } else if (healthPercent > 0.3) {
+                        playerHealthBars[id].fill.setFillStyle(0xffff00);
+                    } else {
+                        playerHealthBars[id].fill.setFillStyle(0xff0000);
+                    }
+                    
+                    // Update attack effect
+                    if (player.attacking && playerAttackEffects[id]) {
+                        playerAttackEffects[id].x = player.x;
+                        playerAttackEffects[id].y = player.y;
+                        playerAttackEffects[id].setVisible(true);
+                    } else if (playerAttackEffects[id]) {
+                        playerAttackEffects[id].setVisible(false);
+                    }
+                }
+            }
+        }
+
+        function updatePlayerCount() {
+            const count = Object.keys(gameState.players).length;
+            document.getElementById('player-count').textContent = `Players: ${count}`;
+        }
+
+        function updateUI() {
+            const myPlayer = gameState.players[myPlayerId];
+            if (myPlayer) {
+                document.getElementById('health').textContent = `Health: ${myPlayer.health}`;
+            }
+        }
+
+        function update() {
+            const inputs = {
+                left: cursors.left.isDown,
+                right: cursors.right.isDown,
+                jump: Phaser.Input.Keyboard.JustDown(cursors.up),
+                attack: Phaser.Input.Keyboard.JustDown(spaceKey),
+                block: zKey.isDown
+            };
+            
+            // Client-side prediction for smooth gameplay
+            if (predictionEnabled && myPlayerId && gameState.players[myPlayerId]) {
+                // Initialize client state if needed
+                if (!clientPlayerState) {
+                    initializeClientPlayerState();
+                }
+                
+                // Apply inputs immediately on client for responsiveness
+                applyClientSidePrediction(inputs);
+                
+                // Buffer input for server reconciliation
+                bufferInput(inputs);
+            }
+            
+            socket.emit('input', inputs);
+        }
+        
+        // Client-side prediction functions
+        function initializeClientPlayerState() {
+            const serverPlayer = gameState.players[myPlayerId];
+            if (!serverPlayer) return;
+            
+            // Perfect sync with server state
+            clientPlayerState = {
+                x: serverPlayer.x,
+                y: serverPlayer.y,
+                velocityX: serverPlayer.velocityX || 0,
+                velocityY: serverPlayer.velocityY || 0,
+                isGrounded: serverPlayer.isGrounded !== undefined ? serverPlayer.isGrounded : true,
+                jumpsRemaining: serverPlayer.jumpsRemaining || 2,
+                lastJumpTime: serverPlayer.lastJumpTime || 0,
+                blocking: serverPlayer.blocking || false,
+                health: serverPlayer.health
+            };
+            
+            // Force immediate position sync to eliminate initial error
+            if (playerSprites[myPlayerId]) {
+                playerSprites[myPlayerId].setPosition(clientPlayerState.x, clientPlayerState.y);
+                updateLocalPlayerHealthBar();
+            }
+        }
+        
+        function updateLocalPlayerHealthBar() {
+            if (predictionEnabled && myPlayerId && clientPlayerState && playerHealthBars[myPlayerId]) {
+                const healthBarX = clientPlayerState.x;
+                const healthBarY = clientPlayerState.y - 40;
+                
+                playerHealthBars[myPlayerId].background.x = healthBarX;
+                playerHealthBars[myPlayerId].background.y = healthBarY;
+                playerHealthBars[myPlayerId].fill.x = healthBarX;
+                playerHealthBars[myPlayerId].fill.y = healthBarY;
+            }
+        }
+
+        function applyClientSidePrediction(inputs) {
+            const deltaTime = 1 / PHYSICS_CONSTANTS.FRAME_RATE;
+            const now = Date.now();
+            
+            // Apply same anti-cheat logic as server: prevent conflicting inputs
+            let inputsCancelled = false;
+            if (inputs.left && inputs.right) {
+                inputs.left = false;
+                inputs.right = false;
+                inputsCancelled = true;
+            }
+            
+            // Update debug panel input status
+            const inputStatusElement = document.getElementById('input-status');
+            if (inputStatusElement) {
+                if (inputsCancelled) {
+                    inputStatusElement.textContent = 'CANCELLED (L+R)';
+                    inputStatusElement.style.color = '#ff6666';
+                } else {
+                    inputStatusElement.textContent = 'Normal';
+                    inputStatusElement.style.color = '#66ff66';
+                }
+            }
+            
+            // Movement prediction with improved accuracy
+            const moveSpeed = clientPlayerState.blocking ? 2 : 4; // Match server MOVEMENT_SPEED
+            
+            // Better direction change handling - reset velocity first
+            let newVelocityX = 0;
+            
+            if (inputs.left && clientPlayerState.x > 25) {
+                newVelocityX = -moveSpeed;
+                clientPlayerState.x -= moveSpeed;
+            } else if (inputs.right && clientPlayerState.x < 775) {
+                newVelocityX = moveSpeed;
+                clientPlayerState.x += moveSpeed;
+            }
+            
+            // Immediately update velocity to match server behavior
+            clientPlayerState.velocityX = newVelocityX;
+            
+            // Jump prediction with exact server matching
+            if (inputs.jump && validateClientJump(now)) {
+                performClientJump(now);
+            }
+            
+            // Apply gravity with precise server matching
+            clientPlayerState.velocityY += PHYSICS_CONSTANTS.GRAVITY * deltaTime;
+            clientPlayerState.y += clientPlayerState.velocityY * deltaTime;
+            
+            // Ground collision with exact server logic
+            if (clientPlayerState.y >= PHYSICS_CONSTANTS.GROUND_Y) {
+                clientPlayerState.y = PHYSICS_CONSTANTS.GROUND_Y;
+                clientPlayerState.velocityY = 0;
+                if (!clientPlayerState.isGrounded) {
+                    clientPlayerState.isGrounded = true;
+                    clientPlayerState.jumpsRemaining = 2;
+                }
+            } else {
+                clientPlayerState.isGrounded = false;
+            }
+            
+            // Update blocking state
+            clientPlayerState.blocking = inputs.block;
+            
+            // Keep within bounds with exact server logic
+            clientPlayerState.x = Math.max(25, Math.min(775, clientPlayerState.x));
+            
+            // Apply predicted position to sprite
+            if (playerSprites[myPlayerId]) {
+                playerSprites[myPlayerId].setPosition(clientPlayerState.x, clientPlayerState.y);
+                updateLocalPlayerHealthBar();
+            }
+        }
+        
+        function validateClientJump(currentTime) {
+            if (!clientPlayerState || clientPlayerState.health <= 0) return false;
+            if (clientPlayerState.jumpsRemaining <= 0) return false;
+            if (currentTime - clientPlayerState.lastJumpTime < 200) return false;
+            return true;
+        }
+        
+        function performClientJump(currentTime) {
+            const jumpVelocity = clientPlayerState.jumpsRemaining === 2 ? 
+                PHYSICS_CONSTANTS.JUMP_VELOCITY_SINGLE : 
+                PHYSICS_CONSTANTS.JUMP_VELOCITY_DOUBLE;
+            
+            clientPlayerState.velocityY = jumpVelocity;
+            clientPlayerState.jumpsRemaining--;
+            clientPlayerState.isGrounded = false;
+            clientPlayerState.lastJumpTime = currentTime;
+        }
+        
+        function bufferInput(inputs) {
+            // Store input with timestamp for server reconciliation
+            inputBuffer.push({
+                inputs: { ...inputs },
+                timestamp: Date.now(),
+                clientState: { ...clientPlayerState }
+            });
+            
+            // Keep buffer size manageable (last 1 second of inputs)
+            const oneSecondAgo = Date.now() - 1000;
+            inputBuffer = inputBuffer.filter(entry => entry.timestamp > oneSecondAgo);
+        }
+        
+        function reconcileWithServer(serverState) {
+            if (!clientPlayerState || !predictionEnabled) return;
+            
+            const serverPlayer = serverState.players[myPlayerId];
+            if (!serverPlayer) return;
+            
+            // Calculate position difference
+            const positionError = Math.sqrt(
+                Math.pow(clientPlayerState.x - serverPlayer.x, 2) + 
+                Math.pow(clientPlayerState.y - serverPlayer.y, 2)
+            );
+            
+            // Calculate velocity difference for better correction
+            const serverVelX = serverPlayer.velocityX || 0;
+            const serverVelY = serverPlayer.velocityY || 0;
+            const velocityError = Math.sqrt(
+                Math.pow(clientPlayerState.velocityX - serverVelX, 2) + 
+                Math.pow(clientPlayerState.velocityY - serverVelY, 2)
+            );
+            
+            // Reduce error threshold for more sensitive corrections
+            const errorThreshold = 3; // Reduced from 5px
+            const velocityThreshold = 50; // New velocity error threshold
+            
+            // More aggressive correction for high errors or velocity mismatches
+            let correctionFactor = 0.15; // Increased from 0.1
+            if (positionError > 15) {
+                correctionFactor = 0.3; // Aggressive correction for large errors
+            } else if (velocityError > velocityThreshold) {
+                correctionFactor = 0.25; // Faster correction for velocity mismatches
+            }
+            
+            // Apply correction if error is significant
+            if (positionError > errorThreshold || velocityError > velocityThreshold) {
+                // Smooth interpolation towards server position
+                clientPlayerState.x += (serverPlayer.x - clientPlayerState.x) * correctionFactor;
+                clientPlayerState.y += (serverPlayer.y - clientPlayerState.y) * correctionFactor;
+                
+                // Always sync velocities to prevent drift
+                clientPlayerState.velocityX = serverVelX;
+                clientPlayerState.velocityY = serverVelY;
+                
+                // Sync critical physics state
+                clientPlayerState.isGrounded = serverPlayer.isGrounded;
+                clientPlayerState.jumpsRemaining = serverPlayer.jumpsRemaining;
+                
+                // Apply corrected position to sprite
+                if (playerSprites[myPlayerId]) {
+                    playerSprites[myPlayerId].setPosition(clientPlayerState.x, clientPlayerState.y);
+                    updateLocalPlayerHealthBar();
+                }
+            }
+            
+            // Update non-predicted states
+            clientPlayerState.health = serverPlayer.health;
+            lastServerUpdate = Date.now();
+            
+            // Update debug panel
+            updateDebugPanel();
+        }
+        
+        function updateDebugPanel() {
+            document.getElementById('prediction-status').textContent = predictionEnabled ? 'ON' : 'OFF';
+            document.getElementById('buffer-size').textContent = inputBuffer.length;
+            document.getElementById('last-update').textContent = Date.now() - lastServerUpdate;
+            
+            if (predictionEnabled && clientPlayerState && gameState.players[myPlayerId]) {
+                const serverPlayer = gameState.players[myPlayerId];
+                const positionError = Math.sqrt(
+                    Math.pow(clientPlayerState.x - serverPlayer.x, 2) + 
+                    Math.pow(clientPlayerState.y - serverPlayer.y, 2)
+                );
+                
+                // Calculate velocity error for debug display
+                const serverVelX = serverPlayer.velocityX || 0;
+                const serverVelY = serverPlayer.velocityY || 0;
+                const velocityError = Math.sqrt(
+                    Math.pow(clientPlayerState.velocityX - serverVelX, 2) + 
+                    Math.pow(clientPlayerState.velocityY - serverVelY, 2)
+                );
+                
+                document.getElementById('position-error').textContent = positionError.toFixed(1);
+                
+                // Add velocity error to debug if position error is high
+                if (positionError > 10 || velocityError > 20) {
+                    document.getElementById('position-error').textContent += ` (vel: ${velocityError.toFixed(1)})`;
+                }
+            } else {
+                document.getElementById('position-error').textContent = '0.0';
+            }
+        }
+        
+        function handleJumpEvent(jumpEvent) {
+            // Handle jump event for visual effects (particle effects, sound, etc.)
+            const playerSprite = playerSprites[jumpEvent.playerId];
+            if (!playerSprite) return;
+            
+            // Visual feedback for jumps
+            const jumpEffect = this.add.circle(jumpEvent.position.x, jumpEvent.position.y + 30, 15, 0xFFFF00, 0.7);
+            jumpEffect.setDepth(1000); // Render on top
+            
+            // Animate the effect
+            this.tweens.add({
+                targets: jumpEffect,
+                scaleX: 2,
+                scaleY: 2,
+                alpha: 0,
+                duration: 300,
+                ease: 'Power2',
+                onComplete: () => {
+                    jumpEffect.destroy();
+                }
+            });
+            
+            // Different effects for single vs double jump
+            if (jumpEvent.jumpType === 'double') {
+                // Add sparkle effect for double jump
+                const sparkle = this.add.circle(jumpEvent.position.x, jumpEvent.position.y + 25, 8, 0xFF00FF, 0.9);
+                sparkle.setDepth(1001);
+                
+                this.tweens.add({
+                    targets: sparkle,
+                    scaleX: 1.5,
+                    scaleY: 1.5,
+                    alpha: 0,
+                    duration: 200,
+                    ease: 'Power1',
+                    onComplete: () => sparkle.destroy()
+                });
+            }
+        }
+    </script>
+</body>
+</html> 

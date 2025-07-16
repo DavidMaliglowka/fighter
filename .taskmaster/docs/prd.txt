@@ -1,0 +1,247 @@
+<context>
+
+## Fighter Game - Repository Analysis
+
+This is a **real-time multiplayer web-based fighting game** built with Node.js, Socket.IO, and Phaser 3. Here's how it works:
+
+### **Architecture Overview**
+
+The game uses a **client-server architecture** with real-time communication:
+
+- **Server** (`server.js`): Authoritative game state management using Node.js + Socket.IO
+- **Client** (`public/index.html`): Game rendering and input handling using Phaser 3
+- **Communication**: WebSockets for low-latency real-time updates
+
+### **How It Works**
+
+#### **1. Server-Side Game Logic** (`server.js`)
+```javascript
+// Core game loop running at 60 FPS
+setInterval(() => {
+    handleCombat();
+    io.emit('gameState', { players });
+}, 1000 / 60);
+```
+
+**Key Features:**
+- **Player Management**: Tracks all connected players with position, health, and state
+- **Combat System**: Processes attacks with range checking (70px), damage (15 HP), and blocking (70% damage reduction)
+- **Physics**: Handles movement bounds, knockback effects, and collision detection
+- **Authoritative State**: Server maintains the single source of truth for game state
+
+#### **2. Client-Side Rendering** (`public/index.html`)
+```javascript
+// Input handling and rendering with Phaser 3
+function update() {
+    const inputs = {
+        left: cursors.left.isDown,
+        right: cursors.right.isDown,
+        // ... other inputs
+    };
+    socket.emit('input', inputs);
+}
+```
+
+**Key Features:**
+- **Phaser 3 Engine**: Handles 2D graphics, sprites, and animations
+- **Input Processing**: Captures keyboard input and sends to server
+- **Visual Feedback**: Health bars, attack animations, player states (blocking = yellow, dead = gray)
+- **Real-time Updates**: Receives game state updates and renders changes
+
+### **Why It Works**
+
+#### **1. Real-Time Architecture**
+- **60 FPS Server Tick**: Ensures smooth, responsive gameplay
+- **WebSocket Communication**: Low-latency bidirectional communication
+- **Authoritative Server**: Prevents cheating by validating all actions server-side
+
+#### **2. Efficient Game Loop**
+```javascript
+// Server processes all combat interactions each frame
+function handleCombat() {
+    for (const attackerId in players) {
+        // Check attacks against all other players
+        // Apply damage, knockback, and state changes
+    }
+}
+```
+
+#### **3. State Synchronization**
+- Server broadcasts complete game state to all clients every frame
+- Clients render based on received state, ensuring consistency
+- Input prediction on client-side for responsive feel
+
+### **Game Mechanics Evidence**
+
+From your logs, we can see the game working:
+```
+d278eHtQOPA_d2E0AAAB hit iP6w_YepvlHxcr2GAAAD for 15 damage. Target health: 85
+```
+
+This shows:
+- **Player Identification**: Socket.IO generates unique IDs for each connection
+- **Combat System**: 15 damage per hit (as configured in `ATTACK_DAMAGE`)
+- **Health Tracking**: Starting at 100 HP, decreasing to 0
+- **Multiplayer Support**: Multiple players can fight simultaneously
+
+### **Technology Choices**
+
+#### **Why Socket.IO?**
+- **Real-time Communication**: Essential for multiplayer games
+- **Automatic Fallbacks**: WebSockets with polling fallbacks
+- **Easy Integration**: Simple event-based API
+
+#### **Why Phaser 3?**
+- **Mature Game Engine**: Built specifically for 2D web games
+- **Performance**: Optimized rendering and game loop management
+- **Rich Features**: Physics, input handling, sprite management
+
+#### **Why Node.js?**
+- **JavaScript Everywhere**: Same language for client and server
+- **Event-Driven**: Perfect for real-time multiplayer games
+- **NPM Ecosystem**: Rich library ecosystem
+
+### **Scalability Considerations**
+
+The current design is simple but effective for small-scale multiplayer:
+- **In-Memory State**: All game state stored in memory (not persistent)
+- **Single Server**: No clustering or load balancing
+- **Direct Broadcasting**: All clients receive all player updates
+
+For larger scale, you'd need:
+- Redis for shared state across server instances
+- Game rooms/lobbies for player segmentation
+- Database persistence for player progression
+
+This is a well-architected **proof-of-concept multiplayer game** that demonstrates core real-time gaming principles with clean, readable code.
+</context>
+
+<PRD>
+# Development Roadmap  
+Below is the revised plan for evolving the "Fighter Game" into a more advanced platform-based fighter, based on your thoughts. I've removed all timeline estimates to focus purely on the order of implementation. We'll proceed iteratively through the phases in sequence (Foundation → Core Gameplay → Advanced Features → Polish & Scalability), building and testing as we go over the next 3 days. Each phase builds on the previous one, so we'll complete and verify one before moving to the next.
+
+To address risks, I've incorporated mitigation strategies throughout:
+- **Client-Side Prediction**: Use Phaser's built-in prediction for smooth local movement (e.g., predict jumps/dashes client-side, reconcile with server state).
+- **Server Authority**: Keep the server as the single source of truth; validate all inputs (e.g., check if jumps are possible based on grounding) to prevent cheating.
+- **Performance Optimization**: Profile the game loop (e.g., using Node.js `console.time`) and optimize broadcasts (e.g., send delta updates instead of full state when possible).
+- **Testing**: After each phase (and major task), focus on multiplayer sync testing (e.g., ensure jumping/falling looks smooth across 2-4 browser tabs). Use Socket.IO's built-in logging for debugging network events.
+
+Effort levels (Low/Medium/High) are retained to help prioritize within phases.
+
+### **High-Level Goals**
+- Transform free-movement controls into platformer-style physics (jumping, falling, platforms).
+- Add depth to combat (dashing, combos, abilities, items).
+- Introduce game structure (lives, falling off edges, rooms/lobbies).
+- Add persistence and progression for replayability.
+- Ensure scalability for 8 players per room without major performance issues.
+
+### **Implementation Phases**
+
+#### **Phase 1: Foundation (Core Mechanics Overhaul)**
+Focus: Update movement and environment to match platformer style. This is the starting point as it affects everything else (e.g., jumping is needed for platforms and falling off edges).
+
+1. **Replace Up/Down Movement with Jumping/Double Jumping and Gravity**
+   - **Details**: Add physics-based jumping (single + double jump) and constant downward gravity. Players "fall" if not on a platform. Remove free up/down arrow key movement.
+   - **Rationale**: Aligns with Super Smash Bros.-style platforming; prevents flying/cheating in current free-movement system.
+   - **Effort**: Medium (Leverage Phaser's Arcade Physics for gravity/jumping on client; sync positions via Socket.IO on server).
+   - **Integration**: In `public/index.html`, enable Phaser physics gravity and add jump input (e.g., on arrow up). In `server.js`, validate jumps server-side to prevent exploits.
+   - **Risk Mitigation**: Implement client-side prediction for jumps in Phaser; server validates and corrects positions. Test sync by checking smooth falling across clients using Socket.IO logs.
+
+2. **Add Dashing**
+   - **Details**: Quick burst of speed (e.g., double-tap left/right), possibly with a cooldown.
+   - **Rationale**: Adds mobility and combo potential, common in platform fighters.
+   - **Effort**: Low (Track input timing on client; apply velocity boost on server).
+   - **Integration**: Extend the `input` event in `server.js` to handle dash logic, broadcasting updated positions.
+   - **Risk Mitigation**: Predict dashes client-side; server validates distance/speed. Profile loop for any broadcast overhead.
+
+3. **Implement Platforms**
+   - **Details**: Add static platforms (e.g., 2-3 levels) that players can land on/jump between. Use Phaser's collision detection.
+   - **Rationale**: Essential for platformer feel; enables falling off edges.
+   - **Effort**: Medium (Add platform sprites in Phaser; handle collisions client-side, validate on server).
+   - **Integration**: Define platforms in a shared config (e.g., new `platforms.js` file); server checks if players are grounded before allowing jumps.
+   - **Risk Mitigation**: Server authorizes landings; test multiplayer sync for jumping between platforms.
+
+**Dependencies**: None—this is our starting phase. After completion, profile the full game loop and optimize broadcasts if needed.
+
+#### **Phase 2: Core Gameplay (Combat and Survival Enhancements)**
+Focus: Build on the foundation to add depth to fighting and winning/losing conditions.
+
+1. **Support for Combos**
+   - **Details**: Detect attack sequences (e.g., light/heavy attacks chaining based on timing/proximity). Add stun/knock-up effects to enable follow-ups.
+   - **Rationale**: Adds skill-based depth beyond single attacks.
+   - **Effort**: Medium (Track attack states on server; add combo counters and multipliers).
+   - **Integration**: Expand `handleCombat()` in `server.js` to check for combo chains; emit combo events to clients for visual feedback (e.g., animations in Phaser).
+   - **Risk Mitigation**: Validate combo inputs server-side; use client prediction for attack feel. Test sync for chain attacks.
+
+2. **Different Character Abilities**
+   - **Details**: Introduce 2-3 character classes (e.g., "Speedster" with faster dashes, "Bruiser" with stronger attacks). Players select on join.
+   - **Rationale**: Variety encourages strategy and replayability.
+   - **Effort**: Medium (Add class selection UI on client; store abilities in player objects on server).
+   - **Integration**: Modify player spawn in `server.js` to include class-specific stats (e.g., modify `ATTACK_DAMAGE` per class).
+   - **Risk Mitigation**: Server enforces ability limits; profile for performance with multiple classes in play.
+
+3. **Players Fall Off Platforms with Multiple Lives**
+   - **Details**: If a player falls below a "death line" (e.g., y > 600), deduct a life and respawn. Start with 3 lives; last player standing wins.
+   - **Rationale**: Core to Super Smash Bros.; adds tension and match structure.
+   - **Effort**: Low (Add boundary checks in server loop; track lives in player objects).
+   - **Integration**: In `server.js` game loop, check positions and handle respawns; broadcast match end when one player remains.
+   - **Risk Mitigation**: Predict falls client-side; server confirms deaths. Optimize broadcasts for respawn events.
+
+**Dependencies**: Requires Phase 1 (jumping/platforms for falling to make sense). Test overall sync after this phase.
+
+#### **Phase 3: Advanced Features (Items and Multiplayer Structure)**
+Focus: Add optional elements for fun and organization.
+
+1. **Small Selection of Items**
+   - **Details**: Spawn random items (e.g., health packs, power-ups for temporary buffs) on platforms. Players can pick up/use them.
+   - **Rationale**: Introduces randomness and strategy, like Smash Bros. items.
+   - **Effort**: Medium (Add item spawns on server; handle pickup collisions).
+   - **Integration**: Create an `items` array in `server.js`, similar to `players`; sync via `gameState` emission. Use Phaser for rendering.
+   - **Risk Mitigation**: Server validates pickups; predict interactions client-side. Profile loop for item-heavy scenarios.
+
+2. **Game Rooms/Lobbies (Up to 8 Players)**
+   - **Details**: Add lobby system where players join named rooms (e.g., via URL or UI). Limit to 8 per room; auto-start matches.
+   - **Rationale**: Organizes multiplayer; prevents overcrowding in a single global game.
+   - **Effort**: Medium (Use Socket.IO rooms feature; add a simple lobby UI).
+   - **Integration**: In `server.js`, use `socket.join(roomId)`; maintain separate `players` objects per room. Client adds room selection on connect.
+   - **Risk Mitigation**: Broadcast only within rooms to optimize; test sync across 8 players.
+
+**Dependencies**: Builds on Phase 2. Items depend on platforms for spawning.
+
+#### **Phase 4: Polish & Scalability (Progression and Backend)**
+Focus: Add long-term engagement and ensure the game scales.
+
+1. **Player Progression (Level Up, Wins/Losses)**
+   - **Details**: Track wins/losses, XP from matches, and levels (e.g., unlock abilities/cosmetics). Display in a profile UI between matches.
+   - **Rationale**: Encourages repeated play; adds meta-progression.
+   - **Effort**: High (Requires user accounts and database integration).
+   - **Integration**: After matches, update stats on server; emit to clients for UI updates.
+   - **Risk Mitigation**: Validate progression server-side; test with simulated matches.
+
+2. **Database for Player Progression**
+   - **Recommendation**: Use **MongoDB** (NoSQL) for flexibility.
+     - **Why?** It's great for storing player documents (e.g., { userId, wins, losses, level, xp }). Easy to integrate with Node.js via Mongoose. Handles unstructured data like unlocked abilities/items. Free tier available on MongoDB Atlas for quick setup.
+     - **Alternatives**: PostgreSQL (SQL) if you need complex queries (e.g., leaderboards); Firebase for real-time sync if you want easier auth.
+     - **Setup Steps**: Add user auth (e.g., via JWT or Socket.IO custom auth). On connect, load/save player data. For 8-player rooms, it's lightweight—no heavy load expected initially.
+     - **Effort**: Medium-High (Add npm packages like `mongoose`; create schemas for users/matches).
+     - **Risk Mitigation**: Optimize database queries during profiling.
+
+3. **Do We Need Redis?**
+   - **Recommendation**: Yes, but not immediately—add it in this phase for scalability.
+     - **Why?** Redis is excellent for real-time features like caching game state, pub/sub for room updates, or leaderboards. With Socket.IO, it can act as an adapter for multi-server scaling (e.g., if you deploy to multiple nodes). For progression, it could cache session data to reduce database hits.
+     - **When?** If player counts grow beyond 8 per room or you add cross-room features (e.g., global leaderboards). Not needed for the initial 8-player setup, as in-memory state in `server.js` suffices.
+     - **Alternatives**: Skip if staying single-server; use Socket.IO's built-in Redis adapter for easy integration.
+     - **Effort**: Low (Install `socket.io-redis`; configure for state sharing).
+     - **Risk Mitigation**: Use Redis to optimize broadcasts across rooms; profile for cache hits.
+
+**Dependencies**: Builds on Phase 3. Progression requires rooms for match tracking.
+
+### **Overall Prioritization and Risks**
+- **Order**: Phase 1 → 2 → 3 → 4 (build and test incrementally).
+- **Risks & General Mitigations**: 
+  - Integrate client-side prediction in Phaser for all movement/combat to reduce perceived lag.
+  - Enforce server authority by validating every input and state change.
+  - Profile the game loop regularly (e.g., after each phase) and optimize broadcasts (e.g., send only changed data).
+  - Conduct focused testing on multiplayer sync, using Socket.IO logging to debug issues like desyncs in jumping or falling.
+- **Next Steps**: Let's start with Phase 1, Task 1 (jumping and gravity). Tell me when you're ready, and I can provide code edits or help with implementation!
+</PRD>

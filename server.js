@@ -50,8 +50,8 @@ function getPlayerGroundState(player, droppingFromPlatformId = null) {
             const playerBottom = player.y + 30; // Player height/2 = 30px
             
             // Check if player is close enough to platform top (within reasonable landing distance)
-            const distanceToTop = Math.abs(playerBottom - platformTop);
-            const isNearPlatform = distanceToTop <= 20; // 20px tolerance for landing
+            const distanceToTop = playerBottom - platformTop;
+            const isNearPlatform =  distanceToTop >= -20 && distanceToTop <= 20; // 20px tolerance for landing
             
             if (isNearPlatform && player.velocityY >= 0) {
                 // For one-way platforms, allow dropping through ONLY the specific platform being dropped from
@@ -278,6 +278,9 @@ function updatePhysics() {
             player.isGrounded = false;
         }
         
+        // Clamp horizontal position BEFORE validating to avoid false out-of-bounds resets
+        player.x = Math.max(25, Math.min(775, player.x));
+        
         // Validate player position and correct if needed
         if (!validatePlayerPosition(player)) {
             // Teleport to nearest spawn point if position is invalid
@@ -291,9 +294,6 @@ function updatePhysics() {
             
             console.log(`Player ${playerId} position corrected to spawn point (${nearestSpawn.x}, ${nearestSpawn.y})`);
         }
-        
-        // Keep players within horizontal bounds
-        player.x = Math.max(25, Math.min(775, player.x));
         
         // Cleanup old jump history to prevent memory leaks
         if (player.jumpHistory) {

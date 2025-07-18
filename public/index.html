@@ -349,7 +349,8 @@
                 jumpsRemaining: serverPlayer.jumpsRemaining || 2,
                 lastJumpTime: serverPlayer.lastJumpTime || 0,
                 blocking: serverPlayer.blocking || false,
-                health: serverPlayer.health
+                health: serverPlayer.health,
+                droppingTimer: 0 // frames left to ignore one-way collisions
             };
             
             // Force immediate position sync to eliminate initial error
@@ -371,6 +372,68 @@
             }
         }
 
+        // Utility: returns true if we should ignore one-way platforms this frame
+        function isDroppingThrough() {
+            return clientPlayerState && clientPlayerState.droppingTimer && clientPlayerState.droppingTimer > 0;
+        }
+
+        function getClientGroundState(player, ignoreOneWay) {
+            const { PLATFORMS, PLATFORM_TYPES, PLATFORM_PHYSICS, PlatformUtils } = window.PlatformConfig;
+
+            let isGrounded = false;
+            let groundY = PHYSICS_CONSTANTS.GROUND_Y; // default ground level
+            let landedPlatform = null;
+
+            const halfPlayerHeight = PLATFORM_PHYSICS.PLAYER_HEIGHT / 2;
+
+            for (const platform of PLATFORMS) {
+                const playerBounds = PlatformUtils.getPlayerBounds(player);
+                const platformBounds = PlatformUtils.getPlatformBounds(platform);
+
+                // Horizontal overlap check
+                const horizontallyOverlapping = playerBounds.left < platformBounds.right &&
+                                                playerBounds.right > platformBounds.left;
+                if (!horizontallyOverlapping) continue;
+
+                const platformTop = platform.y - platform.height / 2;
+                const playerBottom = player.y + halfPlayerHeight;
+                const distToTop = playerBottom - platformTop;
+
+                // Within landing tolerance and falling/downwards movement
+                const nearPlatform = distToTop >= -20 && distToTop <= 20;
+
+                if (nearPlatform && player.velocityY >= 0) {
+                    if (platform.type === PLATFORM_TYPES.ONE_WAY) {
+                        // Ignore collision while dropping through
+                        if (ignoreOneWay || isDroppingThrough()) {
+                            continue;
+                        }
+                        // Can only land if coming from above the platform
+                        if (player.y < platformTop) {
+                            isGrounded = true;
+                            groundY = PlatformUtils.getPlayerStandingY(platform);
+                            landedPlatform = platform;
+                            break;
+                        }
+                    } else {
+                        // SOLID / SPAWN platforms – collide from any direction (primarily above)
+                        isGrounded = true;
+                        groundY = PlatformUtils.getPlayerStandingY(platform);
+                        landedPlatform = platform;
+                        break;
+                    }
+                }
+            }
+
+            // Fallback to ground level if nothing else
+            if (!isGrounded && player.y >= PHYSICS_CONSTANTS.GROUND_Y) {
+                isGrounded = true;
+                groundY = PHYSICS_CONSTANTS.GROUND_Y;
+            }
+
+            return { isGrounded, groundY, platform: landedPlatform };
+        }
+ 
         function applyClientSidePrediction(inputs) {
             const deltaTime = 1 / PHYSICS_CONSTANTS.FRAME_RATE;
             const now = Date.now();
@@ -417,52 +480,70 @@
                 performClientJump(now);
             }
             
-            // Drop-down prediction for one-way platforms
-            // Simplified: just send the input, let server handle the complex logic
-            if (inputs.down && clientPlayerState.isGrounded) {
-                // Light prediction: slightly reduce upward resistance to feel responsive
-                if (clientPlayerState.velocityY > -50) {
-                    clientPlayerState.velocityY = Math.max(0, clientPlayerState.velocityY);
+            // ---------------------------------------------------------------------------
+            // Vertical movement & collision (platform-aware)
+            // ---------------------------------------------------------------------------
+
+            const ignoreOneWayNow = inputs.down || isDroppingThrough(); // hold or active drop
+            // Evaluate current ground state BEFORE movement
+            let groundState = getClientGroundState(clientPlayerState, ignoreOneWayNow);
+
+            // Allow drop-through ONLY when on a ONE_WAY platform
+            const wantsToDrop = inputs.down && groundState.isGrounded &&
+                                groundState.platform && groundState.platform.type === window.PlatformConfig.PLATFORM_TYPES.ONE_WAY;
+
+            if (wantsToDrop) {
+                // Initiate a small downward velocity so gravity takes over
+                clientPlayerState.velocityY = Math.max(clientPlayerState.velocityY, 200); // faster pass-through
+                clientPlayerState.droppingTimer = 12; // ignore one-way collisions for ~200ms (12 frames)
+                groundState.isGrounded = false;
+                clientPlayerState.isGrounded = false;
+            }
+
+            // Decrement droppingTimer each frame
+            if (clientPlayerState.droppingTimer && clientPlayerState.droppingTimer > 0) {
+                clientPlayerState.droppingTimer--;
+            }
+
+            // Apply gravity when not grounded
+            if (!groundState.isGrounded) {
+                clientPlayerState.velocityY += PHYSICS_CONSTANTS.GRAVITY * deltaTime;
+                // Proposed next position
+                const candidateY = clientPlayerState.y + clientPlayerState.velocityY * deltaTime;
+                // If we would overshoot a SOLID/SPAWN platform or ground, clamp smoothly
+                if (groundState.isGrounded && candidateY > groundState.groundY &&
+                    (!groundState.platform || groundState.platform.type !== window.PlatformConfig.PLATFORM_TYPES.ONE_WAY || !ignoreOneWayNow)) {
+                    clientPlayerState.y = groundState.groundY;
+                } else {
+                    clientPlayerState.y = candidateY;
                 }
             }
-            
-            // Check if server says player is grounded to prevent jittering
+
+            // Re-evaluate ground state AFTER movement to clamp to platforms/ground
+            groundState = getClientGroundState(clientPlayerState, ignoreOneWayNow);
+
+            // Smoothly settle onto platform/ground to remove visible gaps without hard snap
+            if (groundState.isGrounded) {
+                const diff = groundState.groundY - clientPlayerState.y; // positive if below surface, negative if floating above
+                const absDiff = Math.abs(diff);
+                if (absDiff > 0.5) { // ignore sub-pixel noise
+                    const settleFactor = absDiff > 8 ? 1 : 0.5; // big error – snap, small – glide
+                    clientPlayerState.y += diff * settleFactor;
+                }
+            }
+
             const serverPlayer = gameState.players[myPlayerId];
-            const serverIsGrounded = serverPlayer && serverPlayer.isGrounded;
-            
-            // Apply vertical physics prediction ONLY if player is clearly in the air
-            // This prevents jittering when standing on platforms/ground
-            // EXCEPTION: Allow drop-down prediction to work by exempting it from anti-jittering
-            const isAttemptingDropDown = inputs.down && clientPlayerState.isGrounded;
-            
-            if (!serverIsGrounded || clientPlayerState.velocityY < -100 || isAttemptingDropDown) {
-                // Apply gravity with precise server matching
-                clientPlayerState.velocityY += PHYSICS_CONSTANTS.GRAVITY * deltaTime;
-                clientPlayerState.y += clientPlayerState.velocityY * deltaTime;
-                
-                // Simple ground collision only - let server handle platforms
-                if (clientPlayerState.y >= PHYSICS_CONSTANTS.GROUND_Y) {
-                    clientPlayerState.y = PHYSICS_CONSTANTS.GROUND_Y;
-                    clientPlayerState.velocityY = 0;
-                    if (!clientPlayerState.isGrounded) {
-                        clientPlayerState.isGrounded = true;
-                        clientPlayerState.jumpsRemaining = 2;
-                    }
-                } else {
-                    clientPlayerState.isGrounded = false;
+            const serverAgreesGrounded = serverPlayer && serverPlayer.isGrounded;
+
+            if (groundState.isGrounded && serverAgreesGrounded) {
+                // Do not force exact Y; just stop vertical movement for smoothness
+                clientPlayerState.velocityY = 0;
+                if (!clientPlayerState.isGrounded) {
+                    clientPlayerState.isGrounded = true;
+                    clientPlayerState.jumpsRemaining = 2;
                 }
             } else {
-                // Player is grounded according to server - keep still vertically to prevent jittering
-                // Keep client position close to server position
-                if (serverPlayer) {
-                    const verticalError = Math.abs(clientPlayerState.y - serverPlayer.y);
-                    if (verticalError > 5) {
-                        // Snap to server position if too far off
-                        clientPlayerState.y = serverPlayer.y;
-                    }
-                    clientPlayerState.velocityY = 0;
-                    clientPlayerState.isGrounded = true;
-                }
+                clientPlayerState.isGrounded = false;
             }
             
             // Update blocking state

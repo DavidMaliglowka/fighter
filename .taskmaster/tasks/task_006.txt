@@ -1,0 +1,37 @@
+# Task ID: 6
+# Title: Implement Fall-Off Death System with Lives
+# Status: pending
+# Dependencies: 3
+# Priority: high
+# Description: Add death boundaries below platforms where players lose lives and respawn system
+# Details:
+Define death line (y > 600) in both client and server. In server game loop: check player positions, deduct life when falling below boundary. Implement respawn system: reset position to spawn point (x: 400, y: 100), brief invincibility (2s). Track lives in player object (start with 3). Add elimination logic: remove player when lives = 0, check for last player standing to end match. Client-side: show lives counter, death animation, respawn countdown. Broadcast match end event with winner.
+
+# Test Strategy:
+Test players lose lives when falling off, respawn correctly, match ends with proper winner. Verify invincibility period works and lives display accurately across clients.
+
+# Subtasks:
+## 1. Implement Death Boundary Detection and Life Management [pending]
+### Dependencies: None
+### Description: Create server-side death boundary checking system that detects when players fall below the death line (y > 600) and manages player life deduction with proper state tracking
+### Details:
+Add death boundary constant (DEATH_Y = 600) in server.js. In game loop, check each player's position against boundary. When player falls below, deduct one life from player.lives (initialize to 3). Track death state to prevent multiple life deductions per fall. Emit death event to all clients with player ID and remaining lives. Reset death state when player respawns above boundary.
+
+## 2. Create Respawn System with Positioning and Invincibility [pending]
+### Dependencies: 6.1
+### Description: Implement respawn mechanics that teleport dead players to spawn point with temporary invincibility period to prevent spawn camping
+### Details:
+Add respawn function that resets player position to spawn point (x: 400, y: 100). Implement invincibility system: set player.invincible = true for 2 seconds after respawn. During invincibility, ignore all damage and combat interactions. Add visual indicator (blinking sprite) on client-side. Automatically trigger respawn 1 second after death detection. Sync respawn state across all clients via Socket.IO.
+
+## 3. Develop Match End Logic and Winner Determination [pending]
+### Dependencies: 6.1
+### Description: Create elimination system that removes players when lives reach zero and determines match winner when only one player remains
+### Details:
+Add elimination logic: when player.lives reaches 0, set player.eliminated = true and remove from active game loop. Track remaining active players count. When only one player remains active, trigger match end event. Determine winner as last surviving player. Broadcast match end event with winner ID and final standings. Implement match reset functionality to start new round. Add spectator mode for eliminated players.
+
+## 4. Build Client-Side UI for Lives Display and Death Animations [pending]
+### Dependencies: 6.2, 6.3
+### Description: Create user interface elements and animations to display player lives, death effects, and respawn countdown with synchronized visual feedback
+### Details:
+Add lives counter UI element showing current lives for each player. Implement death animation sequence: screen shake, fade effect, explosion particles. Create respawn countdown timer (3-2-1) with visual overlay. Add match end screen showing winner and final results. Implement spectator UI for eliminated players. Use Phaser tweens for smooth animations. Ensure UI updates are synchronized with server events and properly handle network delays.
+

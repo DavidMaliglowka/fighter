@@ -1,0 +1,43 @@
+# Task ID: 9
+# Title: Add User Authentication System
+# Status: pending
+# Dependencies: 8
+# Priority: medium
+# Description: Implement basic user authentication to support player progression and persistent data
+# Details:
+Add JWT-based authentication: install jsonwebtoken npm package. Create login/register UI with username/password fields. Implement auth middleware in server.js to verify tokens on socket connection. Store user sessions in memory initially (upgrade to Redis later). Add socket authentication: verify JWT token in socket.io connection middleware. Create user object structure: {userId, username, socketId, roomId}. Handle authentication errors gracefully with reconnection logic.
+
+# Test Strategy:
+Test user registration/login flow, verify authenticated connections only, handle invalid tokens properly. Test session persistence across reconnections.
+
+# Subtasks:
+## 1. JWT Token Generation and Validation Setup [pending]
+### Dependencies: None
+### Description: Install jsonwebtoken package and implement JWT token generation for user authentication and validation middleware
+### Details:
+Install jsonwebtoken npm package. Create JWT utility functions for token generation with user payload (userId, username). Implement token validation middleware with proper error handling for expired/invalid tokens. Set up JWT secret key configuration and token expiration settings (24h default). Create token refresh mechanism for seamless user experience.
+
+## 2. Login/Register UI and User Input Handling [pending]
+### Dependencies: None
+### Description: Create authentication forms with username/password fields and implement client-side input validation and submission
+### Details:
+Design login/register UI forms with username and password input fields. Add client-side validation for username (min 3 chars, alphanumeric) and password (min 6 chars). Implement form submission handlers that send credentials to server endpoints. Add loading states and form feedback messages. Create toggle between login and register modes with smooth transitions.
+
+## 3. Socket.IO Authentication Middleware Implementation [pending]
+### Dependencies: 9.1
+### Description: Implement authentication middleware for Socket.IO connections to verify JWT tokens on connection
+### Details:
+Create Socket.IO authentication middleware that intercepts connection attempts. Verify JWT tokens from client handshake auth headers. Extract user information from valid tokens and attach to socket object. Reject connections with invalid/missing tokens with appropriate error messages. Implement token-based socket identification for user session management.
+
+## 4. Session Management and User Object Structure [pending]
+### Dependencies: 9.3
+### Description: Implement in-memory session storage and define user object structure for authenticated players
+### Details:
+Create user object structure: {userId, username, socketId, roomId, joinTime, isAuthenticated}. Implement in-memory session storage using Map for active users. Add session lifecycle management: create on login, update on room changes, cleanup on disconnect. Implement user lookup functions by userId and socketId. Add session persistence across socket reconnections using userId mapping.
+
+## 5. Error Handling and Reconnection Logic [pending]
+### Dependencies: 9.2, 9.4
+### Description: Implement comprehensive error handling for authentication failures and automatic reconnection logic
+### Details:
+Add authentication error handling: invalid credentials, expired tokens, network failures. Implement client-side reconnection logic with exponential backoff (1s, 2s, 4s intervals). Handle token refresh on reconnection attempts. Add user feedback for authentication states: connecting, authenticated, failed, reconnecting. Implement graceful degradation when authentication service is unavailable.
+

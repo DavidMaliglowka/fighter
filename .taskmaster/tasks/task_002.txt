@@ -1,0 +1,37 @@
+# Task ID: 2
+# Title: Add Dash Mechanics with Cooldown System
+# Status: pending
+# Dependencies: 1
+# Priority: medium
+# Description: Implement quick burst movement (dashing) triggered by double-tap or dedicated key with cooldown to prevent spam
+# Details:
+Add dash input detection in client: track double-tap timing for left/right arrows or use dedicated key (shift). Apply horizontal velocity boost (velocity.x += direction * 300) with 0.5s cooldown. Server-side: validate dash availability, apply knockback-style movement, broadcast position updates. Store dash cooldown timestamp in player object. Client-side prediction: immediately show dash movement, server corrects if invalid. Add visual feedback with brief trail effect using Phaser particles.
+
+# Test Strategy:
+Verify dash works in all directions, cooldown prevents spam, smooth movement across multiple clients. Test edge cases like dashing into walls or off platforms.
+
+# Subtasks:
+## 1. Input Detection System for Double-Tap and Dedicated Keys [pending]
+### Dependencies: None
+### Description: Implement client-side input detection system that tracks double-tap timing for directional keys and handles dedicated dash key inputs with proper timing validation
+### Details:
+Create input handler in client.js to track double-tap timing for left/right arrow keys with configurable timing window (250ms). Add dedicated dash key support (shift/space). Implement input state tracking to prevent multiple dash triggers. Add input validation to ensure dash direction is valid based on current movement state. Store last key press timestamps and implement timing logic for double-tap detection.
+
+## 2. Dash Movement Physics and Velocity Application [pending]
+### Dependencies: 2.1
+### Description: Implement the core dash movement mechanics with velocity manipulation and physics integration for smooth burst movement
+### Details:
+Add dash physics in both client and server: apply horizontal velocity boost (velocity.x += direction * 300) with proper direction calculation. Implement dash duration control with gradual velocity decay. Add collision detection during dash movement to handle wall interactions. Integrate with existing physics system to maintain gravity and platform collision during dash. Add dash state management to track active dash status and prevent movement conflicts.
+
+## 3. Server-Side Validation and Cooldown Management [pending]
+### Dependencies: 2.2
+### Description: Implement authoritative server-side dash validation, cooldown system, and state synchronization to prevent abuse and ensure fair gameplay
+### Details:
+Add server-side dash validation in server.js: verify dash availability based on cooldown timestamp (0.5s). Implement cooldown management using player object timestamps. Add dash state broadcasting to all clients with position updates. Implement anti-cheat measures to prevent dash spam and validate dash requests. Add server reconciliation for dash movements and handle edge cases like simultaneous dash requests. Store dash cooldown state persistently per player.
+
+## 4. Visual Feedback Implementation with Particle Effects and Client-Side Prediction [pending]
+### Dependencies: 2.3
+### Description: Create visual feedback system with particle effects, dash animations, and client-side prediction for responsive gameplay feel
+### Details:
+Implement Phaser particle system for dash trail effects with configurable colors and duration. Add dash animation sprites and visual indicators for dash direction. Implement client-side prediction for immediate dash feedback before server confirmation. Add cooldown UI indicator showing dash availability status. Create smooth interpolation for server corrections to prevent jarring movement. Add visual effects for dash impact and directional indicators. Implement particle cleanup and performance optimization for multiple simultaneous dashes.
+

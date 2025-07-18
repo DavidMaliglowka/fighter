@@ -1,0 +1,31 @@
+# Task ID: 7
+# Title: Create Item Spawn and Pickup System
+# Status: pending
+# Dependencies: 6
+# Priority: low
+# Description: Add random item spawns on platforms with pickup mechanics and temporary effects
+# Details:
+Create items array in server.js with types: health pack (+30 HP), speed boost (1.5x speed for 10s), damage boost (1.3x damage for 15s). Implement random spawning: every 15-30s, spawn item on random platform. Add pickup collision detection: check distance < 30px between player and item. Apply item effects with timers, remove item from world on pickup. Client-side: render item sprites, pickup animations, effect indicators (speed lines, damage glow). Sync item state via gameState emission.
+
+# Test Strategy:
+Verify items spawn randomly, pickup works reliably, effects apply correctly with proper duration. Test multiple players competing for same item.
+
+# Subtasks:
+## 1. Implement Item Definition and Random Spawning System [pending]
+### Dependencies: None
+### Description: Create items array with health pack, speed boost, and damage boost definitions. Implement random spawning logic that spawns items on random platforms every 15-30 seconds with proper timing controls.
+### Details:
+Create items array in server.js with types: health pack (+30 HP), speed boost (1.5x speed for 10s), damage boost (1.3x damage for 15s). Implement random spawning timer that triggers every 15-30 seconds to spawn item on random platform from platforms array. Add item ID generation and position calculation based on platform coordinates.
+
+## 2. Create Pickup Collision Detection and Item Removal [pending]
+### Dependencies: 7.1
+### Description: Implement collision detection between players and items using distance calculation. Add item removal mechanics when pickup occurs and sync removal across all clients.
+### Details:
+Add pickup collision detection in server.js: check distance < 30px between player position and item position. Implement item removal from items array on pickup. Broadcast item removal to all clients via Socket.IO. Handle edge cases like multiple players attempting to pickup same item simultaneously.
+
+## 3. Apply Item Effects and Client-Side Visual Feedback [pending]
+### Dependencies: 7.2
+### Description: Implement item effect application with duration tracking and timers. Add client-side visual feedback including item sprites, pickup animations, and effect indicators.
+### Details:
+Apply item effects with timers: health pack increases HP by 30, speed boost multiplies speed by 1.5x for 10s, damage boost multiplies damage by 1.3x for 15s. Store effect timers in player object. Client-side: render item sprites on platforms, show pickup animations, add effect indicators (speed lines for speed boost, damage glow for damage boost). Sync item state and effects via gameState emission.
+

@@ -1,0 +1,37 @@
+# Task ID: 8
+# Title: Implement Room/Lobby System for 8 Players
+# Status: pending
+# Dependencies: 7
+# Priority: medium
+# Description: Add lobby system using Socket.IO rooms to organize matches with up to 8 players per room
+# Details:
+Use Socket.IO rooms: socket.join(roomId) on connection. Add room selection UI: input field for room name or auto-join. Maintain separate players object per room in server.js using Map<roomId, players>. Modify all broadcasts to use io.to(roomId).emit() instead of io.emit(). Add room management: auto-start match when 2+ players, max 8 players per room. Implement room list display showing active rooms and player counts. Add leave room functionality and cleanup empty rooms.
+
+# Test Strategy:
+Test multiple rooms simultaneously, verify broadcasts only go to correct room, 8-player limit enforced. Test room cleanup when players disconnect.
+
+# Subtasks:
+## 1. Implement Socket.IO Room Management and Player Organization [pending]
+### Dependencies: None
+### Description: Set up Socket.IO room infrastructure with player organization using Map data structure for room-based player management
+### Details:
+Modify server.js to use Map<roomId, players> instead of global players object. Implement socket.join(roomId) on connection. Add room-specific player tracking with methods for adding/removing players from rooms. Create room state management including player counts and room metadata. Implement room validation and player limit enforcement (max 8 players per room).
+
+## 2. Create Room Selection UI and Auto-Join Functionality [pending]
+### Dependencies: 8.1
+### Description: Build client-side interface for room selection with input field and auto-join capabilities
+### Details:
+Add room selection UI to client with input field for room name or auto-join button. Implement room list display showing active rooms and current player counts. Add join room functionality that communicates with server via Socket.IO. Create auto-join logic that places players in available rooms with space. Handle room full scenarios and provide user feedback.
+
+## 3. Modify Broadcast System for Room-Specific Communication [pending]
+### Dependencies: 8.1
+### Description: Update all Socket.IO broadcasts throughout the codebase to use room-specific communication instead of global broadcasts
+### Details:
+Replace all io.emit() calls with io.to(roomId).emit() in server.js. Update game state broadcasts, player movement, combat events, and match events to be room-specific. Modify handleMovement, handleCombat, and other game functions to include roomId parameter. Ensure all client updates only reach players in the same room. Test broadcast isolation between different rooms.
+
+## 4. Implement Room Lifecycle Management and Cleanup [pending]
+### Dependencies: 8.1, 8.2, 8.3
+### Description: Add comprehensive room lifecycle management including auto-start, cleanup, and player limit enforcement
+### Details:
+Implement auto-start match logic when 2+ players join a room. Add room cleanup functionality to remove empty rooms when all players disconnect. Create leave room functionality with proper player removal and room state updates. Implement player limit enforcement (max 8 players) with queue system if needed. Add room persistence and cleanup timers for abandoned rooms. Handle edge cases like host leaving and room migration.
+

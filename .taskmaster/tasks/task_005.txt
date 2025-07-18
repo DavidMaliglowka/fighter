@@ -1,0 +1,37 @@
+# Task ID: 5
+# Title: Add Character Classes with Unique Abilities
+# Status: pending
+# Dependencies: 4
+# Priority: medium
+# Description: Implement 2-3 character classes (Speedster, Bruiser, Balanced) with different stats and abilities
+# Details:
+Create character selection UI in client: dropdown/buttons for class selection on connection. Define classes in server.js: Speedster (speed: 1.3x, health: 80, dash cooldown: 0.3s), Bruiser (damage: 1.5x, health: 120, speed: 0.8x), Balanced (default stats). Modify player spawn to include class-specific stats. Add unique abilities: Speedster gets triple jump, Bruiser gets charge attack (hold to increase damage), Balanced gets shield ability. Store class in player object, validate abilities server-side.
+
+# Test Strategy:
+Verify each class has distinct feel, abilities work as intended, stats are properly applied. Test multiplayer matches with different class combinations.
+
+# Subtasks:
+## 1. Character Selection UI and Class Definition System [pending]
+### Dependencies: None
+### Description: Create character selection interface and define class properties in both client and server
+### Details:
+Implement character selection UI in client with dropdown/buttons for class selection on connection. Define class system in server.js with three classes: Speedster (speed: 1.3x, health: 80, dash cooldown: 0.3s), Bruiser (damage: 1.5x, health: 120, speed: 0.8x), and Balanced (default stats). Create class selection screen that appears before joining game. Store selected class in player object and broadcast to other clients. Add visual indicators for different classes in game.
+
+## 2. Class-Specific Stat Application and Balance Implementation [pending]
+### Dependencies: 5.1
+### Description: Apply class-specific statistics to player objects and implement game balance mechanics
+### Details:
+Modify player spawn system to apply class-specific stats (health, speed, damage multipliers). Implement stat scaling system that affects movement speed, jump height, attack damage, and health pools. Add balance validation to ensure no class is overpowered. Create stat display UI showing current class bonuses/penalties. Implement health regeneration rates that vary by class. Add visual feedback for stat differences (health bars, speed trails, damage indicators).
+
+## 3. Unique Ability Mechanics for Each Class [pending]
+### Dependencies: 5.2
+### Description: Implement distinct special abilities for Speedster, Bruiser, and Balanced classes
+### Details:
+Implement Speedster abilities: triple jump mechanic and dash ability with 0.3s cooldown. Create Bruiser charge attack: hold button to increase damage up to 1.5x multiplier with charging animation. Add Balanced class shield ability: temporary damage reduction with visual shield effect. Implement ability input handling and visual feedback. Add ability cooldown timers and UI indicators. Create particle effects and animations for each unique ability. Ensure abilities work correctly in multiplayer environment.
+
+## 4. Server-Side Validation and Ability Cooldown Management [pending]
+### Dependencies: 5.3
+### Description: Implement authoritative server validation for all class abilities and cooldown systems
+### Details:
+Add server-side validation for all class abilities to prevent cheating. Implement cooldown management system that tracks ability usage timestamps per player. Validate ability prerequisites (e.g., grounded state for jumps, charge time for Bruiser attacks). Create anti-cheat measures for ability spam and stat manipulation. Implement server reconciliation for ability effects. Add logging system for ability usage monitoring. Ensure all ability effects are properly synchronized across all clients with authoritative server state.
+

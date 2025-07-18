@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
+const platformConfig = require('./public/platforms.js');
 
 const app = express();
 const server = http.createServer(app);
@@ -18,11 +19,144 @@ const GRAVITY = 800;
 const GROUND_Y = 560; // Ground level (600 - 40 for ground height)
 const FRAME_RATE = 60;
 
+// Platform system
+const { PLATFORMS, PLATFORM_TYPES, GAME_BOUNDS, PLATFORM_PHYSICS, PlatformUtils } = platformConfig;
+
 // Helper function to calculate distance between two points
 function getDistance(player1, player2) {
     const dx = player1.x - player2.x;
     const dy = player1.y - player2.y;
     return Math.sqrt(dx * dx + dy * dy);
+}
+
+// Platform collision detection functions (now using PlatformUtils)
+
+function getPlayerGroundState(player, droppingFromPlatformId = null) {
+    let isGrounded = false;
+    let groundY = GROUND_Y; // Default ground level
+    let landedPlatform = null;
+    
+    // Check collision with all platforms
+    for (const platform of PLATFORMS) {
+        const playerBounds = PlatformUtils.getPlayerBounds(player);
+        const platformBounds = PlatformUtils.getPlatformBounds(platform);
+        
+        // Check if player is horizontally aligned with platform
+        const isHorizontallyOverlapping = playerBounds.left < platformBounds.right && 
+                                         playerBounds.right > platformBounds.left;
+        
+        if (isHorizontallyOverlapping) {
+            const platformTop = platform.y - platform.height / 2;
+            const playerBottom = player.y + 30; // Player height/2 = 30px
+            
+            // Check if player is close enough to platform top (within reasonable landing distance)
+            const distanceToTop = Math.abs(playerBottom - platformTop);
+            const isNearPlatform = distanceToTop <= 20; // 20px tolerance for landing
+            
+            if (isNearPlatform && player.velocityY >= 0) {
+                // For one-way platforms, allow dropping through ONLY the specific platform being dropped from
+                if (platform.type === PLATFORM_TYPES.ONE_WAY) {
+                    // NEW — never collide with the platform we're dropping from
+                    if (droppingFromPlatformId === platform.id) {
+                        // still in the grace period: let the player pass completely through
+                        continue; // <-- skip collision entirely
+                    }
+                    
+                    if (player.y < platformTop) { // Player center is above platform top
+                        console.log(`Landing on one-way platform ${platform.id}`);
+                        isGrounded = true;
+                        // Position player so bottom touches platform top
+                        groundY = PlatformUtils.getPlayerStandingY(platform);
+                        landedPlatform = platform;
+                        break;
+                    }
+                } else {
+                    // Solid platforms - can land from any direction (but usually from above)
+                    console.log(`Landing on solid platform ${platform.id}`);
+                    isGrounded = true;
+                    // Position player so bottom touches platform top
+                    groundY = PlatformUtils.getPlayerStandingY(platform);
+                    landedPlatform = platform;
+                    break;
+                }
+            }
+        }
+    }
+    
+    // Check original ground level if no platform collision
+    if (!isGrounded && player.y >= GROUND_Y) {
+        isGrounded = true;
+        groundY = GROUND_Y;
+    }
+    
+    // If player has fallen far enough below the platform he dropped from, clear flag
+    if (droppingFromPlatformId &&
+        player.y - PlatformUtils.getPlayerStandingY(
+            PLATFORMS.find(p => p.id === droppingFromPlatformId)
+        ) > 40) {           // 40 px = ⅔ of player height
+        player.droppingFromPlatform = null;
+    }
+    
+    return { isGrounded, groundY, platform: landedPlatform };
+}
+
+function validatePlayerPosition(player) {
+    // Check if player is out of bounds
+    if (player.x < GAME_BOUNDS.PLAYER_MARGIN || 
+        player.x > GAME_BOUNDS.RIGHT - GAME_BOUNDS.PLAYER_MARGIN || 
+        player.y > GAME_BOUNDS.BOTTOM + 50) { // 50px below screen is death zone
+        return false;
+    }
+    
+    // Check if player is clipping through solid platforms (stuck inside)
+    for (const platform of PLATFORMS) {
+        if (platform.type === PLATFORM_TYPES.SOLID) {
+            const playerBounds = PlatformUtils.getPlayerBounds(player);
+            const platformBounds = PlatformUtils.getPlatformBounds(platform);
+            
+            // Check if player is fully inside platform (invalid state)
+            if (PlatformUtils.rectanglesOverlap(playerBounds, platformBounds)) {
+                const platformTop = platform.y - platform.height / 2;
+                const platformBottom = platform.y + platform.height / 2;
+                
+                // If player center is inside platform vertically, it's invalid
+                if (player.y > platformTop + 10 && player.y < platformBottom - 10) {
+                    return false; // Player is clipping through platform
+                }
+            }
+        }
+    }
+    
+    return true;
+}
+
+function getNearestSpawnPoint(x, y) {
+    // Get spawn platforms
+    const spawnPlatforms = PLATFORMS.filter(p => p.type === PLATFORM_TYPES.SPAWN);
+    
+    if (spawnPlatforms.length === 0) {
+        // Fallback to ground center if no spawn platforms
+        return { x: 400, y: GROUND_Y - 30 };
+    }
+    
+    let nearestSpawn = spawnPlatforms[0];
+    let shortestDistance = Infinity;
+    
+    spawnPlatforms.forEach(platform => {
+        const spawnY = PlatformUtils.getPlayerStandingY(platform);
+        const distance = Math.sqrt(
+            Math.pow(platform.x - x, 2) + Math.pow(spawnY - y, 2)
+        );
+        if (distance < shortestDistance) {
+            shortestDistance = distance;
+            nearestSpawn = platform;
+        }
+    });
+    
+    return { 
+        x: nearestSpawn.x, 
+        y: PlatformUtils.getPlayerStandingY(nearestSpawn) 
+    };
 }
 
 // Enhanced jump validation with anti-cheat measures
@@ -85,7 +219,7 @@ function validateInputs(inputs) {
     if (!inputs || typeof inputs !== 'object') return false;
     
     // Validate each input is a boolean (prevent injection attacks)
-    const validInputs = ['left', 'right', 'jump', 'attack', 'block'];
+    const validInputs = ['left', 'right', 'jump', 'attack', 'block', 'down'];
     for (const key in inputs) {
         if (!validInputs.includes(key)) return false;
         if (typeof inputs[key] !== 'boolean') return false;
@@ -113,18 +247,49 @@ function updatePhysics() {
         // Update position based on velocity
         player.y += player.velocityY * deltaTime;
         
-        // Ground collision detection
-        if (player.y >= GROUND_Y) {
-            player.y = GROUND_Y;
+        // Platform and ground collision detection
+        const groundState = getPlayerGroundState(player, player.droppingFromPlatform);
+        
+        if (groundState.isGrounded) {
+            // Debug logging for platform landing
+            if (!player.isGrounded) {
+                console.log(`Player ${playerId} landed at y=${player.y}, ground=${groundState.groundY}`);
+            }
+            
+            player.y = groundState.groundY;
             player.velocityY = 0;
             
             // Reset jump state when landing
             if (!player.isGrounded) {
                 player.isGrounded = true;
                 player.jumpsRemaining = 2;
+                
+                // Reset drop-down state when landing on any platform
+                player.droppingFromPlatform = null;
+                
+                // Emit platform landing event for visual effects
+                io.emit('playerLanded', {
+                    playerId: playerId,
+                    position: { x: player.x, y: player.y },
+                    timestamp: Date.now()
+                });
             }
         } else {
             player.isGrounded = false;
+        }
+        
+        // Validate player position and correct if needed
+        if (!validatePlayerPosition(player)) {
+            // Teleport to nearest spawn point if position is invalid
+            const nearestSpawn = getNearestSpawnPoint(player.x, player.y);
+            player.x = nearestSpawn.x;
+            player.y = nearestSpawn.y;
+            player.velocityX = 0;
+            player.velocityY = 0;
+            player.isGrounded = true;
+            player.jumpsRemaining = 2;
+            
+            console.log(`Player ${playerId} position corrected to spawn point (${nearestSpawn.x}, ${nearestSpawn.y})`);
         }
         
         // Keep players within horizontal bounds
@@ -182,9 +347,11 @@ function handleCombat() {
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
     
-    // Spawn player at random position
-    const spawnX = 200 + Math.random() * 400;
-    const spawnY = 300 + Math.random() * 200;
+    // Spawn player at platform spawn point
+    const spawnPlatforms = PLATFORMS.filter(p => p.type === PLATFORM_TYPES.SPAWN);
+    const randomSpawnPlatform = spawnPlatforms[Math.floor(Math.random() * spawnPlatforms.length)];
+    const spawnX = randomSpawnPlatform.x;
+    const spawnY = PlatformUtils.getPlayerStandingY(randomSpawnPlatform);
     
     players[socket.id] = {
         x: spawnX,
@@ -199,7 +366,8 @@ io.on('connection', (socket) => {
         lastAttackTime: 0,
         isGrounded: true,
         jumpsRemaining: 2, // Allow double jump
-        lastJumpTime: 0
+        lastJumpTime: 0,
+        droppingFromPlatform: null // ID of the specific platform player is dropping from
     };
     
     // Send initial game state to new player
@@ -230,6 +398,25 @@ io.on('connection', (socket) => {
         // Jump handling with enhanced validation and anti-cheat
         if (inputs.jump && validateJump(player, now)) {
             performJump(player, now, socket);
+        }
+        
+        // Drop-down handling for one-way platforms
+        if (inputs.down && player.isGrounded) {
+            // Check if player is standing on a one-way platform
+            const currentGroundState = getPlayerGroundState(player, null); // Pass null to check all platforms
+            if (currentGroundState.platform && currentGroundState.platform.type === PLATFORM_TYPES.ONE_WAY) {
+                console.log(`Player ${socket.id} dropping through one-way platform ${currentGroundState.platform.id}`);
+                player.droppingFromPlatform = currentGroundState.platform.id; // Store the platform ID
+                player.isGrounded = false;
+                player.velocityY = 50; // Small downward velocity to start falling
+                
+                // Reset drop-down state after a short time
+                setTimeout(() => {
+                    if (players[socket.id]) {
+                        players[socket.id].droppingFromPlatform = null; // Clear the platform ID
+                    }
+                }, 300); // 300ms to complete drop
+            }
         }
         
         // Blocking
@@ -264,6 +451,7 @@ setInterval(() => {
     // Enhanced game state with physics information
     const gameState = {
         players: players,
+        platforms: PLATFORMS, // Include platform data for client synchronization
         serverTime: Date.now(),
         tick: gameLoop.tick || 0
     };

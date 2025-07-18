@@ -4,6 +4,7 @@
     <title>Fighter Game</title>
     <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+    <script src="platforms.js"></script>
     <style>
         body {
             margin: 0;
@@ -73,7 +74,7 @@
                 default: 'arcade',
                 arcade: {
                     gravity: { y: 0 }, // Server handles gravity
-                    debug: false // No client-side physics bodies to debug
+                    debug: false // Server handles collision detection
                 }
             },
             scene: {
@@ -90,6 +91,7 @@
         let socket;
         let spaceKey;
         let zKey;
+        let platforms; // Platform physics group
         const playerSprites = {};
         const playerHealthBars = {};
         const playerAttackEffects = {};
@@ -116,9 +118,40 @@
                 .fillRect(0, 0, 800, 600);
         }
 
+        // Platforms are now server-side only - no client collision callbacks needed
+
         function create() {
-            // Create ground platform (visual only - server handles physics)
-            this.add.rectangle(400, 580, 800, 40, 0x8B4513);
+            // Create platform physics group (static - they don't move)
+            platforms = this.physics.add.staticGroup();
+            
+            // Create all platforms from configuration
+            if (window.PlatformConfig) {
+                const { PLATFORMS, PLATFORM_COLORS } = window.PlatformConfig;
+                
+                PLATFORMS.forEach(platformData => {
+                    // Create platform sprite with proper color
+                    const color = PLATFORM_COLORS[platformData.type];
+                    const platform = this.add.rectangle(
+                        platformData.x,
+                        platformData.y,
+                        platformData.width,
+                        platformData.height,
+                        color
+                    );
+                    
+                    // Add physics body to the platform
+                    platforms.add(platform);
+                    
+                    // Store platform data for collision detection
+                    platform.platformData = platformData;
+                });
+                
+                console.log(`Created ${PLATFORMS.length} platforms`);
+            } else {
+                console.error('Platform configuration not loaded!');
+                // Fallback to original ground
+                this.add.rectangle(400, 580, 800, 40, 0x8B4513);
+            }
             
             // Add some background elements
             this.add.rectangle(100, 100, 20, 100, 0x654321); // Tree trunk
@@ -129,6 +162,9 @@
             cursors = this.input.keyboard.createCursorKeys();
             spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
             zKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
+            
+            // Store reference to scene for collision callbacks
+            window.gameScene = this;
             
             // Prediction toggle key
             const pKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
@@ -187,9 +223,12 @@
                 const player = gameState.players[id];
                 
                 if (!playerSprites[id]) {
-                    // Create new player sprite (server handles all physics)
+                    // Create new player sprite with physics body
                     const color = id === myPlayerId ? 0xff0000 : 0x0000ff;
                     playerSprites[id] = this.add.rectangle(player.x, player.y, 40, 60, color);
+                    
+                    // Store player ID on sprite for reference
+                    playerSprites[id].playerId = id;
                     
                     // Create health bar background
                     const healthBarBg = this.add.rectangle(player.x, player.y - 40, 50, 8, 0x333333);
@@ -274,7 +313,8 @@
                 right: cursors.right.isDown,
                 jump: Phaser.Input.Keyboard.JustDown(cursors.up),
                 attack: Phaser.Input.Keyboard.JustDown(spaceKey),
-                block: zKey.isDown
+                block: zKey.isDown,
+                down: cursors.down.isDown
             };
             
             // Client-side prediction for smooth gameplay
@@ -377,20 +417,52 @@
                 performClientJump(now);
             }
             
-            // Apply gravity with precise server matching
-            clientPlayerState.velocityY += PHYSICS_CONSTANTS.GRAVITY * deltaTime;
-            clientPlayerState.y += clientPlayerState.velocityY * deltaTime;
+            // Drop-down prediction for one-way platforms
+            // Simplified: just send the input, let server handle the complex logic
+            if (inputs.down && clientPlayerState.isGrounded) {
+                // Light prediction: slightly reduce upward resistance to feel responsive
+                if (clientPlayerState.velocityY > -50) {
+                    clientPlayerState.velocityY = Math.max(0, clientPlayerState.velocityY);
+                }
+            }
             
-            // Ground collision with exact server logic
-            if (clientPlayerState.y >= PHYSICS_CONSTANTS.GROUND_Y) {
-                clientPlayerState.y = PHYSICS_CONSTANTS.GROUND_Y;
-                clientPlayerState.velocityY = 0;
-                if (!clientPlayerState.isGrounded) {
-                    clientPlayerState.isGrounded = true;
-                    clientPlayerState.jumpsRemaining = 2;
+            // Check if server says player is grounded to prevent jittering
+            const serverPlayer = gameState.players[myPlayerId];
+            const serverIsGrounded = serverPlayer && serverPlayer.isGrounded;
+            
+            // Apply vertical physics prediction ONLY if player is clearly in the air
+            // This prevents jittering when standing on platforms/ground
+            // EXCEPTION: Allow drop-down prediction to work by exempting it from anti-jittering
+            const isAttemptingDropDown = inputs.down && clientPlayerState.isGrounded;
+            
+            if (!serverIsGrounded || clientPlayerState.velocityY < -100 || isAttemptingDropDown) {
+                // Apply gravity with precise server matching
+                clientPlayerState.velocityY += PHYSICS_CONSTANTS.GRAVITY * deltaTime;
+                clientPlayerState.y += clientPlayerState.velocityY * deltaTime;
+                
+                // Simple ground collision only - let server handle platforms
+                if (clientPlayerState.y >= PHYSICS_CONSTANTS.GROUND_Y) {
+                    clientPlayerState.y = PHYSICS_CONSTANTS.GROUND_Y;
+                    clientPlayerState.velocityY = 0;
+                    if (!clientPlayerState.isGrounded) {
+                        clientPlayerState.isGrounded = true;
+                        clientPlayerState.jumpsRemaining = 2;
+                    }
+                } else {
+                    clientPlayerState.isGrounded = false;
                 }
             } else {
-                clientPlayerState.isGrounded = false;
+                // Player is grounded according to server - keep still vertically to prevent jittering
+                // Keep client position close to server position
+                if (serverPlayer) {
+                    const verticalError = Math.abs(clientPlayerState.y - serverPlayer.y);
+                    if (verticalError > 5) {
+                        // Snap to server position if too far off
+                        clientPlayerState.y = serverPlayer.y;
+                    }
+                    clientPlayerState.velocityY = 0;
+                    clientPlayerState.isGrounded = true;
+                }
             }
             
             // Update blocking state

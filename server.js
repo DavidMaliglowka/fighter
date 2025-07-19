@@ -105,6 +105,7 @@ function createRoom(hostSocketId) {
         lastActivity: Date.now(),
         isActive: true,
         gameState: {
+            phase: 'lobby', // lobby, countdown, in-progress, game-over
             gameStarted: false,
             matchInProgress: false
         }
@@ -139,6 +140,11 @@ function joinRoom(code, socketId, playerData = null) {
     
     if (room.players.has(socketId)) {
         return { success: false, error: 'Already in this room' };
+    }
+    
+    // Check if game is in progress - don't allow new players to join mid-game
+    if (room.gameState.phase === 'in-progress' || room.gameState.phase === 'countdown') {
+        return { success: false, error: 'Game already in progress. Please wait for the next round.' };
     }
     
     // Add player to room
@@ -351,8 +357,11 @@ function checkPlayerDeath(player, playerId) {
             timestamp: Date.now()
         });
             
-            // Check for match end
-            checkMatchEnd();
+            // Check for match end in the player's room
+            const roomInfo = getRoomByPlayer(playerId);
+            if (roomInfo) {
+                checkMatchEnd(roomInfo.code);
+            }
         } else {
             // Schedule respawn
             setTimeout(() => {
@@ -413,47 +422,62 @@ function respawnPlayer(player, playerId) {
     });
 }
 
-// Check if match should end (only one player remaining)
-function checkMatchEnd() {
-    const activePlayers = Object.keys(players).filter(id => !players[id].eliminated);
+// Check if match should end (only one player remaining) - room-specific
+function checkMatchEnd(roomCode = null) {
+    // If no room specified, check all active rooms
+    const roomsToCheck = roomCode ? [roomCode] : Array.from(rooms.keys()).filter(code => 
+        rooms.get(code).isActive && rooms.get(code).gameState.phase === 'in-progress'
+    );
     
-    if (activePlayers.length <= 1) {
-        const winnerId = activePlayers.length === 1 ? activePlayers[0] : null;
+    for (const code of roomsToCheck) {
+        const room = rooms.get(code);
+        if (!room) continue;
         
-        console.log(`Match ended! Winner: ${winnerId || 'None (draw)'}`);
+        // Get only players in this specific room
+        const roomPlayerIds = Array.from(room.players.keys());
+        const activePlayers = roomPlayerIds.filter(id => players[id] && !players[id].eliminated);
         
-        // Prepare final stats for all players
-        const playerStats = Object.keys(players).map(id => ({
-            playerId: id,
-            playerName: `Player ${id.substring(0, 8)}...`,
-            lives: players[id].lives,
-            eliminated: players[id].eliminated,
-            isWinner: id === winnerId,
-            kills: players[id].kills || 0,
-            deaths: players[id].deaths || 0,
-            // Calculate K/D ratio
-            kdr: players[id].deaths > 0 ? (players[id].kills / players[id].deaths).toFixed(2) : players[id].kills.toString()
-        }));
-        
-        // Sort by winner first, then by kills, then by lowest deaths
-        playerStats.sort((a, b) => {
-            if (a.isWinner !== b.isWinner) return b.isWinner - a.isWinner;
-            if (a.kills !== b.kills) return b.kills - a.kills;
-            return a.deaths - b.deaths;
-        });
-        
-        // Emit game over event to all rooms (not matchEnd to distinguish from old behavior)
-        emitToAllRooms('gameOver', {
-            winnerId: winnerId,
-            winnerName: winnerId ? `Player ${winnerId.substring(0, 8)}...` : 'No Winner',
-            playerStats: playerStats,
-            totalPlayers: playerStats.length,
-            timestamp: Date.now()
-        });
-        
-        console.log('Game Over! Final Stats:', playerStats);
-        
-        // Don't auto-reset anymore - let players choose rematch or new lobby
+        if (activePlayers.length <= 1) {
+            const winnerId = activePlayers.length === 1 ? activePlayers[0] : null;
+            
+            console.log(`Match ended in room ${code}! Winner: ${winnerId || 'None (draw)'}`);
+            
+            // Set room phase to game-over to allow new players to join for next game
+            room.gameState.phase = 'game-over';
+            room.gameState.matchInProgress = false;
+            
+            // Prepare final stats for players in this room only
+            const playerStats = roomPlayerIds.map(id => ({
+                playerId: id,
+                playerName: `Player ${id.substring(0, 8)}...`,
+                lives: players[id].lives,
+                eliminated: players[id].eliminated,
+                isWinner: id === winnerId,
+                kills: players[id].kills || 0,
+                deaths: players[id].deaths || 0,
+                // Calculate K/D ratio
+                kdr: players[id].deaths > 0 ? (players[id].kills / players[id].deaths).toFixed(2) : players[id].kills.toString()
+            }));
+            
+            // Sort by winner first, then by kills, then by lowest deaths
+            playerStats.sort((a, b) => {
+                if (a.isWinner !== b.isWinner) return b.isWinner - a.isWinner;
+                if (a.kills !== b.kills) return b.kills - a.kills;
+                return a.deaths - b.deaths;
+            });
+            
+            // Emit game over event to this specific room only
+            io.to(code).emit('gameOver', {
+                winnerId: winnerId,
+                winnerName: winnerId ? `Player ${winnerId.substring(0, 8)}...` : 'No Winner',
+                playerStats: playerStats,
+                totalPlayers: playerStats.length,
+                roomCode: code,
+                timestamp: Date.now()
+            });
+            
+            console.log(`Game Over in room ${code}! Final Stats:`, playerStats);
+        }
     }
 }
 
@@ -1019,8 +1043,11 @@ function updatePhysics() {
                     timestamp: Date.now()
                 });
                 
-                // Check for match end
-                checkMatchEnd();
+                // Check for match end in the player's room
+                const roomInfo = getRoomByPlayer(playerId);
+                if (roomInfo) {
+                    checkMatchEnd(roomInfo.code);
+                }
             } else {
                 // Schedule respawn for combat death
                 setTimeout(() => {
@@ -1372,15 +1399,18 @@ io.on('connection', (socket) => {
                 });
             }
             
-            // Check minimum players (at least 2 for testing, can be adjusted)
-            if (roomInfo.room.players.size < 1) { // Allow 1 player for testing
+            // Check minimum players (need at least 2 players)
+            if (roomInfo.room.players.size < 2) {
                 return callback({ 
                     success: false, 
-                    error: 'Need at least 1 player to start' 
+                    error: 'Need at least 2 players to start a game' 
                 });
             }
             
             console.log(`Host ${socket.id} starting game in room ${roomInfo.code} with ${roomInfo.room.players.size} players`);
+            
+            // Set room to countdown phase to prevent new players from joining
+            roomInfo.room.gameState.phase = 'countdown';
             
             // Start 3-second countdown for all players in the room
             io.to(roomInfo.code).emit('gameStartCountdown', {
@@ -1406,6 +1436,11 @@ io.on('connection', (socket) => {
                 } else {
                     // Countdown finished - start the game!
                     clearInterval(countdownInterval);
+                    
+                    // Set room phase to in-progress
+                    roomInfo.room.gameState.phase = 'in-progress';
+                    roomInfo.room.gameState.gameStarted = true;
+                    roomInfo.room.gameState.matchInProgress = true;
                     
                     // Hide room UI and start game for all players in room
                     io.to(roomInfo.code).emit('gameStarted', {
@@ -1458,6 +1493,11 @@ io.on('connection', (socket) => {
             
             console.log(`Host ${socket.id} starting rematch in room ${roomInfo.code}`);
             
+            // Reset room game state for new match
+            roomInfo.room.gameState.phase = 'countdown';
+            roomInfo.room.gameState.gameStarted = false;
+            roomInfo.room.gameState.matchInProgress = false;
+            
             // Reset all players in the room for a new game
             for (const playerSocketId of roomInfo.room.players.keys()) {
                 if (players[playerSocketId]) {
@@ -1496,6 +1536,11 @@ io.on('connection', (socket) => {
                         });
                     } else {
                         clearInterval(countdownInterval);
+                        
+                        // Set room phase to in-progress for rematch
+                        roomInfo.room.gameState.phase = 'in-progress';
+                        roomInfo.room.gameState.gameStarted = true;
+                        roomInfo.room.gameState.matchInProgress = true;
                         
                         io.to(roomInfo.code).emit('gameStarted', {
                             message: 'Round 2, Fight!',
@@ -1538,6 +1583,11 @@ io.on('connection', (socket) => {
             
             console.log(`Player ${socket.id} returning to lobby in room ${roomInfo.code}`);
             
+            // Reset room to lobby state (game is over, ready for new players)
+            roomInfo.room.gameState.phase = 'lobby';
+            roomInfo.room.gameState.gameStarted = false;
+            roomInfo.room.gameState.matchInProgress = false;
+            
             // Reset the player's game state but keep them in the room
             if (players[socket.id]) {
                 resetPlayerForNewGame(players[socket.id], socket.id);
@@ -1569,6 +1619,12 @@ io.on('connection', (socket) => {
     socket.on('input', (inputs) => {
         const player = players[socket.id];
         if (!player || player.health <= 0 || player.isDead || player.eliminated) return;
+        
+        // Check if player is in an active game - ignore inputs if not
+        const roomInfo = getRoomByPlayer(socket.id);
+        if (!roomInfo || roomInfo.room.gameState.phase !== 'in-progress') {
+            return; // Ignore all inputs when not in active game
+        }
         
         // Input validation for network edge cases
         if (!validateInputs(inputs)) return;

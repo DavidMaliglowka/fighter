@@ -250,7 +250,8 @@
             font-size: 18px;
             border-radius: 8px;
             cursor: pointer;
-            margin: 10px;
+            margin: auto;
+            margin-bottom: 10px;
             transition: all 0.3s;
             box-shadow: 0 4px 8px rgba(0,0,0,0.3);
             display: inline-block;
@@ -333,6 +334,24 @@
             margin: 10px 0;
         }
         
+        .warning-message {
+            color: #ff9800;
+            background: rgba(255, 152, 0, 0.1);
+            border: 1px solid #ff9800;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: bold;
+            font-size: 16px;
+            text-align: center;
+            animation: pulse 1.5s ease-in-out infinite alternate;
+        }
+        
+        @keyframes pulse {
+            from { box-shadow: 0 0 5px rgba(255, 152, 0, 0.5); }
+            to { box-shadow: 0 0 20px rgba(255, 152, 0, 0.8); }
+        }
+        
         .success-message {
             color: #4CAF50;
             background: rgba(76, 175, 80, 0.1);
@@ -345,6 +364,46 @@
         #room-ui.hidden {
             display: none;
         }
+
+        /* Disconnection Countdown Toast */
+        .disconnect-toast {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #FF5722;
+            color: #000;
+            padding: 30px 40px;
+            border-radius: 20px;
+            text-align: center;
+            z-index: 4000;
+            border: 3px solid #000;
+            box-shadow: 0 0 40px rgba(255, 87, 34, 0.6);
+            display: none;
+            width: 500px;
+        }
+
+        .disconnect-title {
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .disconnect-message {
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+
+        .disconnect-timer {
+            font-size: 64px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .disconnect-subtext {
+            font-size: 14px;
+        }
+
     </style>
 </head>
 <body>
@@ -400,6 +459,14 @@
     
     <div id="game-container"></div>
     <div id="respawn-countdown"></div>
+    
+    <!-- Disconnection Countdown Toast -->
+    <div id="disconnect-countdown" class="disconnect-toast">
+        <div class="disconnect-title">⚠️ PLAYER DISCONNECTED</div>
+        <div id="disconnect-message" class="disconnect-message">Waiting for reconnection...</div>
+        <div id="disconnect-timer" class="disconnect-timer">10</div>
+        <div class="disconnect-subtext">seconds to rejoin or you win!</div>
+    </div>
     
     <!-- Game Start Countdown -->
     <div id="game-start-countdown">
@@ -541,18 +608,19 @@
         const returnLobbyBtn = document.getElementById('return-lobby-btn');
         
         // Room management functions
-        function showMessage(message, type = 'info') {
+        function showMessage(message, type = 'info', duration = 5000) {
             const messageDiv = document.createElement('div');
-            messageDiv.className = type === 'error' ? 'error-message' : 'success-message';
+            messageDiv.className = type === 'error' ? 'error-message' : 
+                                  type === 'warning' ? 'warning-message' : 'success-message';
             messageDiv.textContent = message;
             roomMessages.appendChild(messageDiv);
             
-            // Auto-remove message after 5 seconds
+            // Auto-remove message after specified duration
             setTimeout(() => {
                 if (messageDiv.parentNode) {
                     messageDiv.parentNode.removeChild(messageDiv);
                 }
-            }, 5000);
+            }, duration);
         }
         
         function showMainMenu() {
@@ -688,6 +756,9 @@
                 if (response.success) {
                     currentRoom = null;
                     isHost = false;
+                    if (window.gameScene) {
+                        window.gameScene.hideDisconnectionCountdown();
+                    }
                     showMainMenu();
                     showMessage('Left room successfully', 'success');
                 } else {
@@ -744,6 +815,8 @@
             });
         });
         
+
+
         // ==================== END ROOM MANAGEMENT SYSTEM ====================
 
         function preload() {
@@ -813,6 +886,56 @@
             
             // Store reference to scene for collision callbacks
             window.gameScene = this;
+            
+            // Initialize disconnection countdown interval tracker
+            this.disconnectionCountdownInterval = null;
+
+            // DOM-based disconnection countdown helpers
+            this.showDisconnectionCountdown = (event) => {
+                const toast      = document.getElementById('disconnect-countdown');
+                const messageEl  = document.getElementById('disconnect-message');
+                const timerEl    = document.getElementById('disconnect-timer');
+
+                let timeLeft = event.gracePeriodSeconds || 10;
+
+                messageEl.textContent = event.message || 'Waiting for reconnection...';
+                timerEl.textContent   = timeLeft;
+                toast.style.display   = 'block';
+
+                // Clear any previous interval
+                if (this.disconnectionCountdownInterval) {
+                    clearInterval(this.disconnectionCountdownInterval);
+                }
+
+                // Start countdown
+                this.disconnectionCountdownInterval = setInterval(() => {
+                    timeLeft--;
+                    timerEl.textContent = timeLeft;
+
+                    // Simple pulse effect for urgency
+                    if (timeLeft <= 5) {
+                        toast.style.transform = 'translate(-50%, -50%) scale(1.05)';
+                        setTimeout(() => {
+                            toast.style.transform = 'translate(-50%, -50%) scale(1)';
+                        }, 150);
+                    }
+
+                    // Auto-hide when finished
+                    if (timeLeft <= 0) {
+                        this.hideDisconnectionCountdown();
+                    }
+                }, 1000);
+            };
+
+            this.hideDisconnectionCountdown = () => {
+                const toast = document.getElementById('disconnect-countdown');
+                toast.style.display = 'none';
+
+                if (this.disconnectionCountdownInterval) {
+                    clearInterval(this.disconnectionCountdownInterval);
+                    this.disconnectionCountdownInterval = null;
+                }
+            };
             
             // Prediction toggle key
             const pKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
@@ -940,6 +1063,11 @@
                 // Hide game over screen if visible
                 hideGameOverScreen();
                 
+                // Hide disconnection countdown if visible
+                if (window.gameScene) {
+                    window.gameScene.hideDisconnectionCountdown();
+                }
+                
                 // Show main menu
                 roomUI.style.display = 'block';
                 showMainMenu();
@@ -1017,6 +1145,9 @@
             // Listen for game over event
             socket.on('gameOver', (gameOverData) => {
                 console.log('Game Over received:', gameOverData);
+                if (window.gameScene) {
+                    window.gameScene.hideDisconnectionCountdown();
+                }
                 showGameOverScreen(gameOverData);
             });
             
@@ -1042,6 +1173,8 @@
                 currentRoom = { code: event.roomCode };
                 isHost = event.isHost;
                 
+                console.log(`Returned to lobby - isHost: ${isHost}, startGameBtn display: ${startGameBtn.style.display}`);
+                
                 // Request updated room info to refresh player list
                 socket.emit('getRoomInfo', (roomInfo) => {
                     if (roomInfo.success) {
@@ -1053,15 +1186,33 @@
             // Listen for room joined event (also triggered on return to lobby)
             socket.on('roomJoined', (event) => {
                 console.log('Room joined/rejoined:', event);
-                // Show room UI if not already visible
-                roomUI.style.display = 'block';
-                showRoomLobby(event.roomCode, event.isHost);
-                currentRoom = { code: event.roomCode };
-                isHost = event.isHost;
                 
-                // Update player list if provided
-                if (event.players) {
-                    updatePlayerList(event.players);
+                if (event.rejoined && event.gameInProgress) {
+                    // Player rejoined an active game - don't show room UI, just continue playing
+                    console.log('Rejoined active game - continuing where left off');
+                    currentRoom = { code: event.roomCode };
+                    isHost = event.isHost;
+                    gameStarted = true;
+                    
+                    // Hide any UI that might be visible
+                    hideMainMenu();
+                    hideGameOverScreen();
+                    roomUI.style.display = 'none';
+                    
+                    showMessage('Welcome back! You have rejoined the game.', 'success', 3000);
+                } else {
+                    // Normal room join or return to lobby
+                    roomUI.style.display = 'block';
+                    showRoomLobby(event.roomCode, event.isHost);
+                    currentRoom = { code: event.roomCode };
+                    isHost = event.isHost;
+                    
+                    console.log(`Room joined/returned to lobby - isHost: ${isHost}, showing start button: ${isHost ? 'yes' : 'no'}`);
+                    
+                    // Update player list if provided
+                    if (event.players) {
+                        updatePlayerList(event.players);
+                    }
                 }
             });
             
@@ -1073,6 +1224,33 @@
                 if (currentRoom && currentRoom.code === event.roomCode && roomLobby.style.display !== 'none') {
                     updatePlayerList(event.players);
                     playerCount.textContent = event.playerCount;
+                }
+            });
+            
+            // Listen for player disconnection grace period
+            socket.on('playerDisconnectedGracePeriod', (event) => {
+                console.log('Player disconnected - grace period started:', event);
+                if (window.gameScene) {
+                    window.gameScene.showDisconnectionCountdown(event);
+                }
+            });
+            
+            // Listen for player rejoining during grace period
+            socket.on('playerRejoinedGame', (event) => {
+                console.log('Player rejoined game:', event);
+                if (window.gameScene) {
+                    window.gameScene.hideDisconnectionCountdown();
+                }
+                showMessage(event.message, 'success', 3000);
+            });
+            
+            // Listen for host transfer events
+            socket.on('hostTransferred', (event) => {
+                console.log('Host transferred:', event);
+                if (event.newHostId === socket.id) {
+                    isHost = true;
+                    startGameBtn.style.display = 'block';
+                    showMessage(event.message, 'success', 5000);
                 }
             });
             
@@ -1239,6 +1417,8 @@
                 statusElement.textContent = '';
             }
         }
+
+
 
         function update() {
             const currentTime = Date.now();
@@ -2159,8 +2339,17 @@
                 statsTbody.appendChild(row);
             });
             
-            // Show/hide rematch button based on host status
-            rematchBtn.style.display = isHost ? 'block' : 'none';
+            // Show/hide rematch button based on host status AND player count
+            const activePlayers = gameOverData.playerStats.filter(player => !player.disconnected);
+            const canRematch = isHost && activePlayers.length >= 2;
+            
+            console.log(`Rematch check - isHost: ${isHost}, activePlayers: ${activePlayers.length}, canRematch: ${canRematch}`);
+            
+            rematchBtn.style.display = canRematch ? 'block' : 'none';
+            
+            if (!canRematch && isHost && activePlayers.length < 2) {
+                console.log('Rematch not available - need at least 2 active players');
+            }
             
             // Show the game over screen
             gameOverScreen.style.display = 'block';

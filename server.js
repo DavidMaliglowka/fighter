@@ -108,7 +108,9 @@ function createRoom(hostSocketId) {
             phase: 'lobby', // lobby, countdown, in-progress, game-over
             gameStarted: false,
             matchInProgress: false
-        }
+        },
+        disconnectionTimer: null, // Timer for 10-second grace period
+        disconnectedPlayers: new Map() // socketId -> disconnection time
     };
     
     rooms.set(code, room);
@@ -142,9 +144,38 @@ function joinRoom(code, socketId, playerData = null) {
         return { success: false, error: 'Already in this room' };
     }
     
-    // Check if game is in progress - don't allow new players to join mid-game
-    if (room.gameState.phase === 'in-progress' || room.gameState.phase === 'countdown') {
+    // Check if this is a rejoining player during grace period
+    const isRejoiningDuringGrace = room.disconnectedPlayers.has(socketId);
+    
+    // Check if game is in progress - don't allow new players to join mid-game (but allow rejoins during grace period)
+    if ((room.gameState.phase === 'in-progress' || room.gameState.phase === 'countdown') && !isRejoiningDuringGrace) {
         return { success: false, error: 'Game already in progress. Please wait for the next round.' };
+    }
+    
+    if (isRejoiningDuringGrace) {
+        // Player is rejoining during grace period
+        console.log(`Player ${socketId} rejoined room ${normalizedCode} during grace period - cancelling timer`);
+        
+        // Cancel the disconnection timer
+        if (room.disconnectionTimer) {
+            clearTimeout(room.disconnectionTimer);
+            room.disconnectionTimer = null;
+        }
+        
+        // Restore player data
+        const disconnectedData = room.disconnectedPlayers.get(socketId);
+        room.disconnectedPlayers.delete(socketId);
+        
+        // Add player back to room with their original data
+        room.players.set(socketId, disconnectedData.playerData || {});
+        
+        // Restore player in global players object if they were removed
+        if (!players[socketId] && disconnectedData.playerData) {
+            players[socketId] = disconnectedData.playerData;
+        }
+        
+        // Notify other players that player rejoined
+        return { success: true, room: room, rejoined: true };
     }
     
     // Add player to room
@@ -263,6 +294,12 @@ function cleanupRooms() {
     roomsToDelete.forEach(code => {
         const room = rooms.get(code);
         if (room) {
+            // Clear any active disconnection timer
+            if (room.disconnectionTimer) {
+                clearTimeout(room.disconnectionTimer);
+                room.disconnectionTimer = null;
+            }
+            
             // Notify any remaining players
             room.players.forEach((_, socketId) => {
                 const socket = io.sockets.sockets.get(socketId);
@@ -461,8 +498,10 @@ function checkMatchEnd(roomCode = null) {
         const room = rooms.get(code);
         if (!room) continue;
         
-        // Get only players in this specific room
+        // Get players in this specific room (including disconnected players during grace period)
         const roomPlayerIds = Array.from(room.players.keys());
+        const disconnectedPlayerIds = Array.from(room.disconnectedPlayers.keys());
+        const allRoomPlayerIds = [...roomPlayerIds, ...disconnectedPlayerIds];
         const activePlayers = roomPlayerIds.filter(id => players[id] && !players[id].eliminated);
         
         if (activePlayers.length <= 1) {
@@ -475,10 +514,27 @@ function checkMatchEnd(roomCode = null) {
             room.gameState.matchInProgress = false;
             
             // Prepare final stats for players in this room only (including disconnected players)
-            const playerStats = roomPlayerIds.map(id => {
+            const playerStats = allRoomPlayerIds.map(id => {
                 const player = players[id];
-                if (!player) {
-                    // Player disconnected during game - mark as DQ
+                const disconnectedData = room.disconnectedPlayers.get(id);
+                
+                if (!player && disconnectedData) {
+                    // Player disconnected during game - use stored data and mark as DQ
+                    const storedPlayer = disconnectedData.playerData;
+                    return {
+                        playerId: id,
+                        playerName: `Player ${id.substring(0, 8)}...`,
+                        lives: storedPlayer ? storedPlayer.lives : 0,
+                        eliminated: true,
+                        isWinner: false,
+                        kills: storedPlayer ? (storedPlayer.kills || 0) : 0,
+                        deaths: storedPlayer ? (storedPlayer.deaths || 0) : 0,
+                        kdr: storedPlayer && storedPlayer.deaths > 0 ? (storedPlayer.kills / storedPlayer.deaths).toFixed(2) : (storedPlayer ? storedPlayer.kills.toString() : '0'),
+                        disconnected: true,
+                        rank: 'DQ'
+                    };
+                } else if (!player) {
+                    // Player disconnected and no data - fallback
                     return {
                         playerId: id,
                         playerName: `Player ${id.substring(0, 8)}...`,
@@ -492,6 +548,7 @@ function checkMatchEnd(roomCode = null) {
                         rank: 'DQ'
                     };
                 } else {
+                    // Active player
                     return {
                         playerId: id,
                         playerName: `Player ${id.substring(0, 8)}...`,
@@ -1326,23 +1383,47 @@ io.on('connection', (socket) => {
             socket.join(result.room.code);
             socket.roomCode = result.room.code;
             
-            // Notify existing players in the room
-            socket.to(result.room.code).emit('playerJoinedRoom', {
-                socketId: socket.id,
-                playerCount: result.room.players.size,
-                maxPlayers: ROOM_CONFIG.MAX_PLAYERS
-            });
-            
-            console.log(`Player ${socket.id} joined room ${result.room.code}`);
-            
-            callback({ 
-                success: true, 
-                roomCode: result.room.code,
-                isHost: false,
-                playerCount: result.room.players.size,
-                maxPlayers: ROOM_CONFIG.MAX_PLAYERS,
-                hostId: result.room.hostId
-            });
+            if (result.rejoined) {
+                // Player rejoined during grace period
+                console.log(`Player ${socket.id} rejoined room ${result.room.code} during grace period`);
+                
+                // Notify other players that player rejoined
+                socket.to(result.room.code).emit('playerRejoinedGame', {
+                    socketId: socket.id,
+                    playerCount: result.room.players.size,
+                    message: 'Player reconnected! Game continues.'
+                });
+                
+                callback({ 
+                    success: true, 
+                    roomCode: result.room.code,
+                    isHost: result.room.hostId === socket.id,
+                    playerCount: result.room.players.size,
+                    maxPlayers: ROOM_CONFIG.MAX_PLAYERS,
+                    hostId: result.room.hostId,
+                    rejoined: true,
+                    gameInProgress: true
+                });
+            } else {
+                // Normal room join
+                // Notify existing players in the room
+                socket.to(result.room.code).emit('playerJoinedRoom', {
+                    socketId: socket.id,
+                    playerCount: result.room.players.size,
+                    maxPlayers: ROOM_CONFIG.MAX_PLAYERS
+                });
+                
+                console.log(`Player ${socket.id} joined room ${result.room.code}`);
+                
+                callback({ 
+                    success: true, 
+                    roomCode: result.room.code,
+                    isHost: false,
+                    playerCount: result.room.players.size,
+                    maxPlayers: ROOM_CONFIG.MAX_PLAYERS,
+                    hostId: result.room.hostId
+                });
+            }
             
         } catch (error) {
             console.error('Error joining room:', error);
@@ -1669,6 +1750,8 @@ io.on('connection', (socket) => {
                 }))
             });
             
+            console.log(`Player ${socket.id} returned to lobby. Current host: ${roomInfo.room.hostId}, Is this player host: ${roomInfo.room.hostId === socket.id}`);
+            
             // Notify all other players in the room about the updated room state
             socket.to(roomInfo.code).emit('playerReturnedToLobby', {
                 playerId: socket.id,
@@ -1777,28 +1860,96 @@ io.on('connection', (socket) => {
         // Clean up room if player was in one
         const roomInfo = getRoomByPlayer(socket.id);
         if (roomInfo) {
+            const room = roomInfo.room;
+            
+            // Check if this is during an active game and will leave only one player
+            const isActiveGame = room.gameState.phase === 'in-progress';
+            const currentPlayerCount = room.players.size;
+            
+            // Store disconnected player info before removing them
+            const disconnectedPlayerData = players[socket.id];
+            
             // Leave the Socket.IO room
             socket.leave(roomInfo.code);
             
-            // Remove from room data structure
-            const leftRoom = leaveRoom(socket.id);
-            
-            if (leftRoom && leftRoom.players.size > 0) {
-                // Notify remaining players
-                socket.to(roomInfo.code).emit('playerLeftRoom', {
-                    socketId: socket.id,
-                    playerCount: leftRoom.players.size,
-                    maxPlayers: ROOM_CONFIG.MAX_PLAYERS,
-                    newHostId: leftRoom.hostId,
-                    reason: 'disconnect'
+            if (isActiveGame && currentPlayerCount === 2) {
+                // Only one player will remain - start 10-second grace period
+                console.log(`Player ${socket.id} disconnected from active game in room ${roomInfo.code} - starting 10 second grace period`);
+                
+                // Store disconnected player data for potential rejoin
+                room.disconnectedPlayers.set(socket.id, {
+                    disconnectedAt: Date.now(),
+                    playerData: disconnectedPlayerData
                 });
                 
-                console.log(`Player ${socket.id} disconnected from room ${roomInfo.code}`);
+                // CRITICAL: Handle host transfer if the disconnected player was the host
+                if (room.hostId === socket.id) {
+                    // Remove from room data structure but keep in disconnected list
+                    room.players.delete(socket.id);
+                    
+                    // Transfer host to the remaining player
+                    if (room.players.size > 0) {
+                        const newHostId = room.players.keys().next().value;
+                        room.hostId = newHostId;
+                        console.log(`Host transfer: ${socket.id} -> ${newHostId} in room ${roomInfo.code} during grace period`);
+                        
+                        // Notify the new host
+                        socket.to(roomInfo.code).emit('hostTransferred', {
+                            newHostId: newHostId,
+                            previousHostId: socket.id,
+                            message: 'You are now the host!'
+                        });
+                    }
+                } else {
+                    // Non-host disconnected, just remove from room
+                    room.players.delete(socket.id);
+                }
+                
+                // Notify remaining player about the disconnection and grace period
+                const playerName = `Player ${socket.id.substring(0, 8)}...`;
+                socket.to(roomInfo.code).emit('playerDisconnectedGracePeriod', {
+                    disconnectedPlayerId: socket.id,
+                    playerName: playerName,
+                    gracePeriodSeconds: 10,
+                    message: `${playerName} disconnected - 10 seconds to rejoin or you win!`
+                });
+                
+                // Set 10-second timer
+                room.disconnectionTimer = setTimeout(() => {
+                    console.log(`Grace period expired in room ${roomInfo.code} - ending game`);
+                    
+                    // Clear disconnected players
+                    room.disconnectedPlayers.clear();
+                    room.disconnectionTimer = null;
+                    
+                    // Force game end with remaining player as winner
+                    checkMatchEnd(roomInfo.code);
+                }, 10000);
+                
+            } else {
+                // Normal disconnection handling
+                const leftRoom = leaveRoom(socket.id);
+                
+                if (leftRoom && leftRoom.players.size > 0) {
+                    // Notify remaining players
+                    socket.to(roomInfo.code).emit('playerLeftRoom', {
+                        socketId: socket.id,
+                        playerCount: leftRoom.players.size,
+                        maxPlayers: ROOM_CONFIG.MAX_PLAYERS,
+                        newHostId: leftRoom.hostId,
+                        reason: 'disconnect'
+                    });
+                    
+                    console.log(`Player ${socket.id} disconnected from room ${roomInfo.code}`);
+                }
             }
         }
         
-        // Remove player from global players object
-        delete players[socket.id];
+        // Remove player from global players object (only if not in grace period)
+        const roomInfo2 = getRoomByPlayer(socket.id);
+        if (!roomInfo2 || !roomInfo2.room.disconnectedPlayers.has(socket.id)) {
+            delete players[socket.id];
+        }
     });
 });
 

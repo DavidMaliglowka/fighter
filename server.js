@@ -19,6 +19,12 @@ const GRAVITY = 800;
 const GROUND_Y = 560; // Ground level (600 - 40 for ground height)
 const FRAME_RATE = 60;
 
+// Dash system constants
+const DASH_VELOCITY = 900; // Horizontal velocity boost (increased from 300)
+const DASH_DURATION = 150; // Duration in milliseconds (reduced from 200 for snappier feel)
+const DASH_COOLDOWN = 350; // Cooldown between dashes in milliseconds (reduced from 500)
+const DASH_DECAY_RATE = 0.85; // Velocity decay factor per frame (faster decay to prevent overshoot)
+
 // Platform system
 const { PLATFORMS, PLATFORM_TYPES, GAME_BOUNDS, PLATFORM_PHYSICS, PlatformUtils } = platformConfig;
 
@@ -213,16 +219,83 @@ function performJump(player, currentTime, socket) {
     io.emit('playerJump', jumpEvent);
 }
 
+// Enhanced dash validation with anti-cheat measures
+function validateDash(player, currentTime) {
+    // Basic validations
+    if (!player || player.health <= 0) return false;
+    
+    // Cooldown check (anti-spam)
+    if (currentTime - player.lastDashTime < DASH_COOLDOWN) return false;
+    
+    // Prevent dash while already dashing
+    if (player.isDashing) return false;
+    
+    // Anti-cheat: Validate player position (prevent teleport exploits)
+    if (player.y < 0 || player.y > 600) return false;
+    if (player.x < 25 || player.x > 775) return false;
+    
+    // Rate limiting: max 5 dashes per second per player
+    if (!player.dashHistory) player.dashHistory = [];
+    const oneSecondAgo = currentTime - 1000;
+    player.dashHistory = player.dashHistory.filter(time => time > oneSecondAgo);
+    if (player.dashHistory.length >= 5) return false;
+    
+    return true;
+}
+
+// Perform dash with physics and event broadcasting
+function performDash(player, direction, currentTime, socket) {
+    const dashDirection = direction === 'left' ? -1 : 1;
+    
+    // Apply dash physics
+    player.isDashing = true;
+    player.dashDirection = dashDirection;
+    player.dashStartTime = currentTime;
+    player.lastDashTime = currentTime;
+    player.dashVelocity = DASH_VELOCITY * dashDirection;
+    
+    // Apply immediate velocity boost (combines with normal movement)
+    player.velocityX += player.dashVelocity;
+    
+    // Track dash for rate limiting
+    if (!player.dashHistory) player.dashHistory = [];
+    player.dashHistory.push(currentTime);
+    
+    // Broadcast dash event to all clients for visual effects
+    const dashEvent = {
+        playerId: socket.id,
+        direction: direction,
+        position: { x: player.x, y: player.y },
+        velocity: player.dashVelocity,
+        timestamp: currentTime
+    };
+    
+    io.emit('playerDash', dashEvent);
+    
+    console.log(`Player ${socket.id} dashed ${direction} with velocity ${player.dashVelocity}`);
+}
+
 // Input validation for network edge cases
 function validateInputs(inputs) {
     // Check if inputs object exists and is valid
     if (!inputs || typeof inputs !== 'object') return false;
     
-    // Validate each input is a boolean (prevent injection attacks)
-    const validInputs = ['left', 'right', 'jump', 'attack', 'block', 'down'];
+    // Validate each input type
+    const validBooleanInputs = ['left', 'right', 'jump', 'attack', 'block', 'down'];
+    const validStringInputs = ['dash']; // Dash can be 'left', 'right', or null
+    
     for (const key in inputs) {
-        if (!validInputs.includes(key)) return false;
-        if (typeof inputs[key] !== 'boolean') return false;
+        if (validBooleanInputs.includes(key)) {
+            if (typeof inputs[key] !== 'boolean') return false;
+        } else if (validStringInputs.includes(key)) {
+            // Dash input can be 'left', 'right', or null
+            if (inputs[key] !== null && inputs[key] !== 'left' && inputs[key] !== 'right') {
+                return false;
+            }
+        } else {
+            // Unknown input key
+            return false;
+        }
     }
     
     // Prevent impossible input combinations (anti-cheat)
@@ -295,10 +368,47 @@ function updatePhysics() {
             console.log(`Player ${playerId} position corrected to spawn point (${nearestSpawn.x}, ${nearestSpawn.y})`);
         }
         
+        // Dash physics updates
+        if (player.isDashing) {
+            const currentTime = Date.now();
+            const dashElapsed = currentTime - player.dashStartTime;
+            
+            // Check if dash duration has ended
+            if (dashElapsed >= DASH_DURATION) {
+                player.isDashing = false;
+                player.dashDirection = 0;
+                player.dashVelocity = 0;
+                console.log(`Player ${playerId} dash completed`);
+            } else {
+                // Apply velocity decay during dash
+                player.dashVelocity *= DASH_DECAY_RATE;
+                
+                // Apply dash movement (combines with normal movement)
+                const dashMovement = player.dashVelocity * deltaTime;
+                player.x += dashMovement;
+                
+                // Wall collision detection during dash
+                if (player.x <= 25 || player.x >= 775) {
+                    // Stop dash on wall collision
+                    player.isDashing = false;
+                    player.dashDirection = 0;
+                    player.dashVelocity = 0;
+                    player.x = Math.max(25, Math.min(775, player.x)); // Clamp position
+                    console.log(`Player ${playerId} dash stopped by wall collision`);
+                }
+            }
+        }
+        
         // Cleanup old jump history to prevent memory leaks
         if (player.jumpHistory) {
             const fiveSecondsAgo = Date.now() - 5000;
             player.jumpHistory = player.jumpHistory.filter(time => time > fiveSecondsAgo);
+        }
+        
+        // Cleanup old dash history to prevent memory leaks
+        if (player.dashHistory) {
+            const fiveSecondsAgo = Date.now() - 5000;
+            player.dashHistory = player.dashHistory.filter(time => time > fiveSecondsAgo);
         }
     }
 }
@@ -367,7 +477,13 @@ io.on('connection', (socket) => {
         isGrounded: true,
         jumpsRemaining: 2, // Allow double jump
         lastJumpTime: 0,
-        droppingFromPlatform: null // ID of the specific platform player is dropping from
+        droppingFromPlatform: null, // ID of the specific platform player is dropping from
+        // Dash system properties
+        isDashing: false,
+        dashDirection: 0, // -1 for left, 1 for right, 0 for none
+        dashStartTime: 0,
+        lastDashTime: 0,
+        dashVelocity: 0
     };
     
     // Send initial game state to new player
@@ -398,6 +514,11 @@ io.on('connection', (socket) => {
         // Jump handling with enhanced validation and anti-cheat
         if (inputs.jump && validateJump(player, now)) {
             performJump(player, now, socket);
+        }
+        
+        // Dash handling with validation and cooldown
+        if (inputs.dash && validateDash(player, now)) {
+            performDash(player, inputs.dash, now, socket);
         }
         
         // Drop-down handling for one-way platforms

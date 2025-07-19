@@ -49,8 +49,11 @@
         <div>Controls:</div>
         <div>Left/Right: Move</div>
         <div>Up: Jump</div>
+        <div>Down: Drop through platforms</div>
         <div>Space: Attack</div>
         <div>Z: Block</div>
+        <div>Shift+Arrow: Dash</div>
+        <div>Double-tap Arrow: Dash</div>
         <div>P: Toggle Prediction</div>
     </div>
     
@@ -91,7 +94,16 @@
         let socket;
         let spaceKey;
         let zKey;
+        let shiftKey; // Dedicated dash key
         let platforms; // Platform physics group
+        
+        // Dash input detection variables
+        let lastLeftKeyTime = 0;
+        let lastRightKeyTime = 0;
+        let dashInputCooldown = 0; // Prevent multiple dash triggers
+        const DASH_DOUBLE_TAP_WINDOW = 250; // ms
+        const DASH_INPUT_COOLDOWN = 100; // ms to prevent multiple triggers
+        
         const playerSprites = {};
         const playerHealthBars = {};
         const playerAttackEffects = {};
@@ -163,6 +175,9 @@
             spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
             zKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
             
+            // Dash input keys
+            shiftKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
+            
             // Store reference to scene for collision callbacks
             window.gameScene = this;
             
@@ -199,6 +214,11 @@
             // Listen for jump events for visual effects
             socket.on('playerJump', (jumpEvent) => {
                 handleJumpEvent.call(this, jumpEvent);
+            });
+            
+            // Listen for dash events for visual effects
+            socket.on('playerDash', (dashEvent) => {
+                handleDashEvent.call(this, dashEvent);
             });
         }
 
@@ -308,13 +328,56 @@
         }
 
         function update() {
+            const currentTime = Date.now();
+            
+            // Dash input detection system
+            let dashDirection = null; // null, 'left', or 'right'
+            
+            // Update dash input cooldown
+            if (dashInputCooldown > 0) {
+                dashInputCooldown -= 16.67; // Approximate frame time (60fps)
+            }
+            
+            // Check for dedicated dash key (Shift) + direction
+            if (Phaser.Input.Keyboard.JustDown(shiftKey) && dashInputCooldown <= 0) {
+                if (cursors.left.isDown) {
+                    dashDirection = 'left';
+                    dashInputCooldown = DASH_INPUT_COOLDOWN;
+                } else if (cursors.right.isDown) {
+                    dashDirection = 'right';
+                    dashInputCooldown = DASH_INPUT_COOLDOWN;
+                }
+            }
+            
+            // Check for double-tap dash (left/right keys)
+            if (dashInputCooldown <= 0) {
+                // Left key double-tap detection
+                if (Phaser.Input.Keyboard.JustDown(cursors.left)) {
+                    if (currentTime - lastLeftKeyTime <= DASH_DOUBLE_TAP_WINDOW) {
+                        dashDirection = 'left';
+                        dashInputCooldown = DASH_INPUT_COOLDOWN;
+                    }
+                    lastLeftKeyTime = currentTime;
+                }
+                
+                // Right key double-tap detection  
+                if (Phaser.Input.Keyboard.JustDown(cursors.right)) {
+                    if (currentTime - lastRightKeyTime <= DASH_DOUBLE_TAP_WINDOW) {
+                        dashDirection = 'right';
+                        dashInputCooldown = DASH_INPUT_COOLDOWN;
+                    }
+                    lastRightKeyTime = currentTime;
+                }
+            }
+            
             const inputs = {
                 left: cursors.left.isDown,
                 right: cursors.right.isDown,
                 jump: Phaser.Input.Keyboard.JustDown(cursors.up),
                 attack: Phaser.Input.Keyboard.JustDown(spaceKey),
                 block: zKey.isDown,
-                down: cursors.down.isDown
+                down: cursors.down.isDown,
+                dash: dashDirection // Add dash direction to inputs
             };
             
             // Client-side prediction for smooth gameplay
@@ -350,7 +413,12 @@
                 lastJumpTime: serverPlayer.lastJumpTime || 0,
                 blocking: serverPlayer.blocking || false,
                 health: serverPlayer.health,
-                droppingTimer: 0 // frames left to ignore one-way collisions
+                droppingTimer: 0, // frames left to ignore one-way collisions
+                isDashing: false, // New for dash state
+                dashDirection: 0, // New for dash direction
+                dashStartTime: 0, // New for dash start time
+                lastDashTime: 0, // New for last dash time
+                dashVelocity: 0 // New for dash velocity
             };
             
             // Force immediate position sync to eliminate initial error
@@ -480,6 +548,11 @@
                 performClientJump(now);
             }
             
+            // Dash prediction with client-side validation
+            if (inputs.dash && validateClientDash(now)) {
+                performClientDash(inputs.dash, now);
+            }
+            
             // ---------------------------------------------------------------------------
             // Vertical movement & collision (platform-aware)
             // ---------------------------------------------------------------------------
@@ -575,6 +648,41 @@
             clientPlayerState.jumpsRemaining--;
             clientPlayerState.isGrounded = false;
             clientPlayerState.lastJumpTime = currentTime;
+        }
+        
+        function validateClientDash(currentTime) {
+            if (!clientPlayerState || clientPlayerState.health <= 0) return false;
+            if (dashInputCooldown > 0) return false; // Prevent multiple dash triggers
+            if (clientPlayerState.isDashing) return false; // Prevent dash while already dashing
+            if (currentTime - (clientPlayerState.lastDashTime || 0) < 350) return false; // Dash cooldown (reduced from 500)
+            return true;
+        }
+
+        function performClientDash(direction, currentTime) {
+            const dashVelocity = 900; // Match server DASH_VELOCITY (increased from 300)
+            const dashDirection = direction === 'left' ? -1 : 1;
+            
+            // Apply dash physics immediately
+            clientPlayerState.isDashing = true;
+            clientPlayerState.dashDirection = dashDirection;
+            clientPlayerState.dashStartTime = currentTime;
+            clientPlayerState.lastDashTime = currentTime;
+            clientPlayerState.dashVelocity = dashVelocity * dashDirection;
+            
+            // Apply immediate velocity boost for responsive feel
+            clientPlayerState.velocityX += clientPlayerState.dashVelocity;
+            
+            // Apply movement immediately  
+            const deltaTime = 1 / PHYSICS_CONSTANTS.FRAME_RATE;
+            clientPlayerState.x += clientPlayerState.dashVelocity * deltaTime;
+            
+            // Update sprite position immediately
+            if (playerSprites[myPlayerId]) {
+                playerSprites[myPlayerId].setPosition(clientPlayerState.x, clientPlayerState.y);
+                updateLocalPlayerHealthBar();
+            }
+            
+            console.log(`Client predicted dash ${direction} with velocity ${clientPlayerState.dashVelocity}`);
         }
         
         function bufferInput(inputs) {
@@ -720,6 +828,60 @@
                     onComplete: () => sparkle.destroy()
                 });
             }
+        }
+        
+        function handleDashEvent(dashEvent) {
+            // Handle dash event for visual effects (particle trail, sound, etc.)
+            const playerSprite = playerSprites[dashEvent.playerId];
+            if (!playerSprite) return;
+            
+            // Visual feedback for dash - create trail effect
+            const dashTrail = this.add.rectangle(
+                dashEvent.position.x, 
+                dashEvent.position.y, 
+                60, 
+                20, 
+                0x00FFFF, 
+                0.6
+            );
+            dashTrail.setDepth(999); // Render behind player but above background
+            
+            // Animate the trail effect
+            this.tweens.add({
+                targets: dashTrail,
+                scaleX: dashEvent.direction === 'left' ? -0.2 : 0.2,
+                scaleY: 0.5,
+                alpha: 0,
+                duration: 200,
+                ease: 'Power2',
+                onComplete: () => {
+                    dashTrail.destroy();
+                }
+            });
+            
+            // Add directional speed lines
+            for (let i = 0; i < 3; i++) {
+                const speedLine = this.add.rectangle(
+                    dashEvent.position.x + (dashEvent.direction === 'left' ? 20 : -20) * (i + 1),
+                    dashEvent.position.y + (Math.random() - 0.5) * 30,
+                    15,
+                    3,
+                    0xFFFFFF,
+                    0.8
+                );
+                speedLine.setDepth(998);
+                
+                this.tweens.add({
+                    targets: speedLine,
+                    x: speedLine.x + (dashEvent.direction === 'left' ? -30 : 30),
+                    alpha: 0,
+                    duration: 150 + i * 50,
+                    ease: 'Linear',
+                    onComplete: () => speedLine.destroy()
+                });
+            }
+            
+            console.log(`Dash visual effect for player ${dashEvent.playerId} direction ${dashEvent.direction}`);
         }
     </script>
 </body>

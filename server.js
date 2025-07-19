@@ -19,6 +19,18 @@ const GRAVITY = 800;
 const GROUND_Y = 560; // Ground level (600 - 40 for ground height)
 const FRAME_RATE = 60;
 
+// Death boundary constants - extended fall-off area
+const DEATH_BOUNDARIES = {
+    LEFT: -200,      // Extended 200px to the left of play area
+    RIGHT: 1000,     // Extended 200px to the right of play area (800 + 200)
+    BOTTOM: 950      // Extended ~400px below ground (3 jump heights) for recovery attempts
+};
+
+// Lives system constants
+const STARTING_LIVES = 3;
+const INVINCIBILITY_DURATION = 2000; // 2 seconds in milliseconds
+const RESPAWN_DELAY = 3000; // 3 seconds before respawn (with countdown)
+
 // Dash system constants
 const DASH_VELOCITY = 900; // Horizontal velocity boost (increased from 300)
 const DASH_DURATION = 150; // Duration in milliseconds (reduced from 200 for snappier feel)
@@ -33,6 +45,164 @@ function getDistance(player1, player2) {
     const dx = player1.x - player2.x;
     const dy = player1.y - player2.y;
     return Math.sqrt(dx * dx + dy * dy);
+}
+
+// Death boundary detection and life management
+function checkPlayerDeath(player, playerId) {
+    // Skip death check if player is already dead, eliminated, or invincible
+    if (player.isDead || player.eliminated || player.isInvincible) {
+        return false;
+    }
+    
+    // Check if player has fallen beyond death boundaries
+    const isOutOfBounds = player.x < DEATH_BOUNDARIES.LEFT || 
+                         player.x > DEATH_BOUNDARIES.RIGHT || 
+                         player.y > DEATH_BOUNDARIES.BOTTOM;
+    
+    // Debug logging
+    if (player.x < -150 || player.x > 950 || player.y > 850) {
+        console.log(`Player ${playerId} near boundary: x=${player.x}, y=${player.y}, outOfBounds=${isOutOfBounds}`);
+    }
+    
+    if (isOutOfBounds) {
+        // Player has died - deduct a life
+        player.lives--;
+        player.isDead = true;
+        player.deathTime = Date.now();
+        
+        console.log(`Player ${playerId} died! Lives remaining: ${player.lives}`);
+        
+        // Check if player is eliminated (no lives left)
+        if (player.lives <= 0) {
+            player.eliminated = true;
+            console.log(`Player ${playerId} eliminated!`);
+            
+            // Emit elimination event
+            io.emit('playerEliminated', {
+                playerId: playerId,
+                finalPosition: { x: player.x, y: player.y },
+                timestamp: Date.now()
+            });
+            
+            // Check for match end
+            checkMatchEnd();
+        } else {
+            // Schedule respawn
+            setTimeout(() => {
+                if (players[playerId] && !players[playerId].eliminated) {
+                    respawnPlayer(players[playerId], playerId);
+                }
+            }, RESPAWN_DELAY);
+        }
+        
+        // Emit death event to all clients
+        io.emit('playerDeath', {
+            playerId: playerId,
+            livesRemaining: player.lives,
+            deathPosition: { x: player.x, y: player.y },
+            isEliminated: player.eliminated,
+            timestamp: Date.now()
+        });
+        
+        return true;
+    }
+    
+    return false;
+}
+
+// Respawn system
+function respawnPlayer(player, playerId) {
+    if (player.eliminated) return;
+    
+    // Get a random spawn point
+    const spawnPlatforms = PLATFORMS.filter(p => p.type === PLATFORM_TYPES.SPAWN);
+    const randomSpawnPlatform = spawnPlatforms[Math.floor(Math.random() * spawnPlatforms.length)];
+    const spawnX = randomSpawnPlatform.x;
+    const spawnY = PlatformUtils.getPlayerStandingY(randomSpawnPlatform);
+    
+    // Reset player state
+    player.x = spawnX;
+    player.y = spawnY;
+    player.velocityX = 0;
+    player.velocityY = 0;
+    player.isDead = false;
+    player.isGrounded = true;
+    player.jumpsRemaining = 2;
+    player.health = player.maxHealth; // Full health on respawn
+    
+    // Grant invincibility period
+    player.isInvincible = true;
+    player.invincibilityEndTime = Date.now() + INVINCIBILITY_DURATION;
+    
+    console.log(`Player ${playerId} respawned at (${spawnX}, ${spawnY}) with invincibility`);
+    
+    // Emit respawn event
+    io.emit('playerRespawn', {
+        playerId: playerId,
+        position: { x: spawnX, y: spawnY },
+        livesRemaining: player.lives,
+        invincibilityDuration: INVINCIBILITY_DURATION,
+        timestamp: Date.now()
+    });
+}
+
+// Check if match should end (only one player remaining)
+function checkMatchEnd() {
+    const activePlayers = Object.keys(players).filter(id => !players[id].eliminated);
+    
+    if (activePlayers.length <= 1) {
+        const winnerId = activePlayers.length === 1 ? activePlayers[0] : null;
+        
+        console.log(`Match ended! Winner: ${winnerId || 'None (draw)'}`);
+        
+        // Emit match end event
+        io.emit('matchEnd', {
+            winnerId: winnerId,
+            finalStandings: Object.keys(players).map(id => ({
+                playerId: id,
+                lives: players[id].lives,
+                eliminated: players[id].eliminated,
+                isWinner: id === winnerId
+            })),
+            timestamp: Date.now()
+        });
+        
+        // Reset match after a delay (optional)
+        setTimeout(() => {
+            resetMatch();
+        }, 5000); // 5 second delay before reset
+    }
+}
+
+// Reset match to start a new round
+function resetMatch() {
+    console.log('Resetting match for new round...');
+    
+    // Reset all players
+    for (const playerId in players) {
+        const player = players[playerId];
+        player.lives = STARTING_LIVES;
+        player.isDead = false;
+        player.eliminated = false;
+        player.isInvincible = false;
+        player.health = player.maxHealth;
+        
+        // Respawn all players
+        const spawnPlatforms = PLATFORMS.filter(p => p.type === PLATFORM_TYPES.SPAWN);
+        const randomSpawnPlatform = spawnPlatforms[Math.floor(Math.random() * spawnPlatforms.length)];
+        player.x = randomSpawnPlatform.x;
+        player.y = PlatformUtils.getPlayerStandingY(randomSpawnPlatform);
+        player.velocityX = 0;
+        player.velocityY = 0;
+        player.isGrounded = true;
+        player.jumpsRemaining = 2;
+    }
+    
+    // Emit match reset event
+    io.emit('matchReset', {
+        message: 'New round starting!',
+        timestamp: Date.now()
+    });
 }
 
 // Platform collision detection functions (now using PlatformUtils)
@@ -107,11 +277,9 @@ function getPlayerGroundState(player, droppingFromPlatformId = null) {
 }
 
 function validatePlayerPosition(player) {
-    // Check if player is out of bounds
-    if (player.x < GAME_BOUNDS.PLAYER_MARGIN || 
-        player.x > GAME_BOUNDS.RIGHT - GAME_BOUNDS.PLAYER_MARGIN || 
-        player.y > GAME_BOUNDS.BOTTOM + 50) { // 50px below screen is death zone
-        return false;
+    // Skip validation for dead or eliminated players (they'll be handled by death system)
+    if (player.isDead || player.eliminated) {
+        return true;
     }
     
     // Check if player is clipping through solid platforms (stuck inside)
@@ -180,8 +348,8 @@ function validateJump(player, currentTime) {
     if (player.velocityY > 300) return false;
     
     // Anti-cheat: Validate player position (prevent teleport exploits)
-    if (player.y < 0 || player.y > 600) return false;
-    if (player.x < 0 || player.x > 800) return false;
+    if (player.y < 0 || player.y > 1000) return false; // Updated for expanded canvas
+    if (player.x < -300 || player.x > 1100) return false; // Allow movement in extended areas
     
     // Rate limiting: max 10 jumps per second per player
     if (!player.jumpHistory) player.jumpHistory = [];
@@ -234,8 +402,8 @@ function validateDash(player, currentTime) {
     if (player.attacking || player.blocking) return false;
     
     // Anti-cheat: Validate player position (prevent teleport exploits)
-    if (player.y < 0 || player.y > 600) return false;
-    if (player.x < 25 || player.x > 775) return false;
+    if (player.y < 0 || player.y > 1000) return false; // Updated for expanded canvas
+    if (player.x < -300 || player.x > 1100) return false; // Allow movement in extended areas
     
     // Check if player is in a valid state to dash (not falling too fast)
     if (Math.abs(player.velocityY) > 1000) return false; // Prevent dash during excessive fall
@@ -410,12 +578,12 @@ function updatePhysics() {
             player.isGrounded = false;
         }
         
-        // Clamp horizontal position BEFORE validating to avoid false out-of-bounds resets
-        player.x = Math.max(25, Math.min(775, player.x));
+        // Allow players to move freely - no horizontal clamping for fall-off deaths
+        // Players can now move beyond the 800px play area to fall off the sides
         
-        // Validate player position and correct if needed
+        // Validate player position for platform clipping only
         if (!validatePlayerPosition(player)) {
-            // Teleport to nearest spawn point if position is invalid
+            // Only handle platform clipping - teleport to nearest spawn point
             const nearestSpawn = getNearestSpawnPoint(player.x, player.y);
             player.x = nearestSpawn.x;
             player.y = nearestSpawn.y;
@@ -424,7 +592,7 @@ function updatePhysics() {
             player.isGrounded = true;
             player.jumpsRemaining = 2;
             
-            console.log(`Player ${playerId} position corrected to spawn point (${nearestSpawn.x}, ${nearestSpawn.y})`);
+            console.log(`Player ${playerId} position corrected due to platform clipping (${nearestSpawn.x}, ${nearestSpawn.y})`);
         }
         
         // Dash physics updates
@@ -446,20 +614,35 @@ function updatePhysics() {
                 const dashMovement = player.dashVelocity * deltaTime;
                 player.x += dashMovement;
                 
-                // Wall collision detection during dash
-                if (player.x <= 25 || player.x >= 775) {
-                    // Stop dash on wall collision
+                // Wall collision detection during dash (only for extreme boundaries)
+                if (player.x <= -250 || player.x >= 1050) {
+                    // Stop dash on extreme boundary collision
                     player.isDashing = false;
                     player.dashDirection = 0;
                     player.dashVelocity = 0;
-                    player.x = Math.max(25, Math.min(775, player.x)); // Clamp position
-                    console.log(`Player ${playerId} dash stopped by wall collision`);
+                    player.x = Math.max(-250, Math.min(1050, player.x)); // Clamp position to extreme boundaries
+                    console.log(`Player ${playerId} dash stopped by extreme boundary collision`);
                 }
             }
         }
         
         // Validate and clean up dash state consistency
         validatePlayerDashState(player);
+        
+        // Handle invincibility timer
+        if (player.isInvincible && Date.now() > player.invincibilityEndTime) {
+            player.isInvincible = false;
+            console.log(`Player ${playerId} invincibility ended`);
+            
+            // Emit invincibility end event
+            io.emit('playerInvincibilityEnd', {
+                playerId: playerId,
+                timestamp: Date.now()
+            });
+        }
+        
+        // Check for player death (fall-off boundaries)
+        checkPlayerDeath(player, playerId);
         
         // Cleanup old jump history to prevent memory leaks
         if (player.jumpHistory) {
@@ -488,7 +671,7 @@ function handleCombat() {
                 const target = players[targetId];
                 const distance = getDistance(attacker, target);
                 
-                if (distance <= ATTACK_RANGE && target.health > 0) {
+                if (distance <= ATTACK_RANGE && target.health > 0 && !target.isDead && !target.eliminated && !target.isInvincible) {
                     // Calculate damage (reduced if blocking)
                     let damage = ATTACK_DAMAGE;
                     if (target.blocking) {
@@ -508,9 +691,9 @@ function handleCombat() {
                     target.x += Math.cos(angle) * knockbackDistance;
                     target.y += Math.sin(angle) * knockbackDistance;
                     
-                    // Keep players in bounds
-                    target.x = Math.max(25, Math.min(775, target.x));
-                    target.y = Math.max(25, Math.min(575, target.y));
+                    // Keep players in reasonable bounds (allow some overshoot for knockback)
+                    target.x = Math.max(-200, Math.min(1000, target.x));
+                    target.y = Math.max(25, Math.min(975, target.y));
                     
                     console.log(`${attackerId} hit ${targetId} for ${damage} damage. Target health: ${target.health}`);
                 }
@@ -550,7 +733,14 @@ io.on('connection', (socket) => {
         dashDirection: 0, // -1 for left, 1 for right, 0 for none
         dashStartTime: 0,
         lastDashTime: 0,
-        dashVelocity: 0
+        dashVelocity: 0,
+        // Lives and death system properties
+        lives: STARTING_LIVES,
+        isDead: false,
+        isInvincible: false,
+        invincibilityEndTime: 0,
+        deathTime: 0,
+        eliminated: false
     };
     
     // Send initial game state to new player
@@ -558,20 +748,20 @@ io.on('connection', (socket) => {
     
     socket.on('input', (inputs) => {
         const player = players[socket.id];
-        if (!player || player.health <= 0) return;
+        if (!player || player.health <= 0 || player.isDead || player.eliminated) return;
         
         // Input validation for network edge cases
         if (!validateInputs(inputs)) return;
         
         const now = Date.now();
         
-        // Horizontal movement (slower when blocking)
+        // Horizontal movement (slower when blocking) - allow movement beyond boundaries
         const moveSpeed = player.blocking ? MOVEMENT_SPEED * 0.5 : MOVEMENT_SPEED;
         
-        if (inputs.left && player.x > 25) {
+        if (inputs.left) {
             player.velocityX = -moveSpeed;
             player.x -= moveSpeed;
-        } else if (inputs.right && player.x < 775) {
+        } else if (inputs.right) {
             player.velocityX = moveSpeed;
             player.x += moveSpeed;
         } else {

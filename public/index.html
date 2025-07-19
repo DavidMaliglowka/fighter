@@ -37,14 +37,34 @@
             font-size: 14px;
             z-index: 1000;
         }
+        #respawn-countdown {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            color: #ff6666;
+            padding: 30px;
+            border-radius: 15px;
+            font-size: 64px;
+            font-weight: bold;
+            text-align: center;
+            display: none;
+            z-index: 2000;
+            border: 3px solid #ff6666;
+            box-shadow: 0 0 30px rgba(255, 102, 102, 0.5);
+        }
     </style>
 </head>
 <body>
     <div id="ui">
         <div id="player-count">Players: 0</div>
         <div id="health">Health: 100</div>
+        <div id="lives">Lives: 3</div>
+        <div id="match-status"></div>
     </div>
     <div id="game-container"></div>
+    <div id="respawn-countdown"></div>
     <div id="controls">
         <div>Controls:</div>
         <div>Left/Right: Move</div>
@@ -69,8 +89,8 @@
         // Phaser game configuration
         const config = {
             type: Phaser.AUTO,
-            width: 800,
-            height: 600,
+            width: 1200, // Expanded from 800 to allow fall-off movement
+            height: 1000, // Expanded from 600 to allow fall recovery attempts
             parent: 'game-container',
             backgroundColor: '#2c5f2d',
             physics: {
@@ -124,10 +144,41 @@
         };
 
         function preload() {
-            // Create simple colored rectangles for sprites
+            // Create simple colored rectangles for sprites - extend background
             this.add.graphics()
                 .fillStyle(0x333333)
-                .fillRect(0, 0, 800, 600);
+                .fillRect(0, 0, 1200, 1000);
+                
+            // Add visual indicators for the main play area (800px center)
+            this.add.graphics()
+                .lineStyle(2, 0x555555)
+                .strokeRect(200, 0, 800, 600); // Main play area outline
+                
+                            // Add visual indicator for death zone
+                this.add.graphics()
+                    .lineStyle(2, 0xff3333, 0.5)
+                    .strokeRect(0, 950, 1200, 2); // Death boundary line
+                    
+                // Add ground extension visual so players can see fall zone
+                this.add.graphics()
+                    .fillStyle(0x4a4a4a) // Darker ground color
+                    .fillRect(200, 600, 800, 350) // Extended ground area
+                    .lineStyle(2, 0x666666)
+                    .strokeRect(200, 600, 800, 350);
+                    
+                // Add danger text in the pit
+                this.add.text(600, 800, 'DANGER ZONE', {
+                    fontSize: '24px',
+                    fill: '#ff3333',
+                    stroke: '#000000',
+                    strokeThickness: 2
+                }).setOrigin(0.5).setAlpha(0.7);
+                
+                // Add side cliff walls to show fall-off areas
+                this.add.graphics()
+                    .fillStyle(0x8B4513) // Brown cliff color
+                    .fillRect(0, 600, 200, 350) // Left cliff
+                    .fillRect(1000, 600, 200, 350); // Right cliff
         }
 
         // Platforms are now server-side only - no client collision callbacks needed
@@ -144,7 +195,7 @@
                     // Create platform sprite with proper color
                     const color = PLATFORM_COLORS[platformData.type];
                     const platform = this.add.rectangle(
-                        platformData.x,
+                        platformData.x + 200, // Offset by 200px to center in 1200px canvas
                         platformData.y,
                         platformData.width,
                         platformData.height,
@@ -165,11 +216,11 @@
                 this.add.rectangle(400, 580, 800, 40, 0x8B4513);
             }
             
-            // Add some background elements
-            this.add.rectangle(100, 100, 20, 100, 0x654321); // Tree trunk
-            this.add.circle(100, 80, 40, 0x228B22); // Tree leaves
-            this.add.rectangle(700, 120, 20, 80, 0x654321); // Tree trunk
-            this.add.circle(700, 100, 35, 0x228B22); // Tree leaves
+            // Add some background elements (offset for centered play area)
+            this.add.rectangle(300, 100, 20, 100, 0x654321); // Tree trunk (100 + 200 offset)
+            this.add.circle(300, 80, 40, 0x228B22); // Tree leaves
+            this.add.rectangle(900, 120, 20, 80, 0x654321); // Tree trunk (700 + 200 offset)
+            this.add.circle(900, 100, 35, 0x228B22); // Tree leaves
             
             cursors = this.input.keyboard.createCursorKeys();
             spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
@@ -177,6 +228,11 @@
             
             // Dash input keys
             shiftKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
+            
+            // Set camera bounds to show the full expanded area
+            this.cameras.main.setBounds(0, 0, 1200, 1000);
+            // Center camera on the main play area initially  
+            this.cameras.main.setScroll(0, 0);
             
             // Store reference to scene for collision callbacks
             window.gameScene = this;
@@ -220,6 +276,36 @@
             socket.on('playerDash', (dashEvent) => {
                 handleDashEvent.call(this, dashEvent);
             });
+            
+            // Listen for death events
+            socket.on('playerDeath', (deathEvent) => {
+                handlePlayerDeath.call(this, deathEvent);
+            });
+            
+            // Listen for respawn events
+            socket.on('playerRespawn', (respawnEvent) => {
+                handlePlayerRespawn.call(this, respawnEvent);
+            });
+            
+            // Listen for elimination events
+            socket.on('playerEliminated', (eliminationEvent) => {
+                handlePlayerElimination.call(this, eliminationEvent);
+            });
+            
+            // Listen for match end events
+            socket.on('matchEnd', (matchEndEvent) => {
+                handleMatchEnd.call(this, matchEndEvent);
+            });
+            
+            // Listen for match reset events
+            socket.on('matchReset', (resetEvent) => {
+                handleMatchReset.call(this, resetEvent);
+            });
+            
+            // Listen for invincibility end events
+            socket.on('playerInvincibilityEnd', (invincibilityEvent) => {
+                handleInvincibilityEnd.call(this, invincibilityEvent);
+            });
         }
 
         function updatePlayerSprites() {
@@ -245,14 +331,14 @@
                 if (!playerSprites[id]) {
                     // Create new player sprite with physics body
                     const color = id === myPlayerId ? 0xff0000 : 0x0000ff;
-                    playerSprites[id] = this.add.rectangle(player.x, player.y, 40, 60, color);
+                    playerSprites[id] = this.add.rectangle(player.x + 200, player.y, 40, 60, color); // Offset by 200px
                     
                     // Store player ID on sprite for reference
                     playerSprites[id].playerId = id;
                     
                     // Create health bar background
-                    const healthBarBg = this.add.rectangle(player.x, player.y - 40, 50, 8, 0x333333);
-                    const healthBarFill = this.add.rectangle(player.x, player.y - 40, 48, 6, 0x00ff00);
+                    const healthBarBg = this.add.rectangle(player.x + 200, player.y - 40, 50, 8, 0x333333);
+                    const healthBarFill = this.add.rectangle(player.x + 200, player.y - 40, 48, 6, 0x00ff00);
                     
                     playerHealthBars[id] = {
                         background: healthBarBg,
@@ -260,28 +346,41 @@
                     };
                     
                     // Create attack effect (initially invisible)
-                    playerAttackEffects[id] = this.add.circle(player.x, player.y, 35, 0xffff00, 0.6);
+                    playerAttackEffects[id] = this.add.circle(player.x + 200, player.y, 35, 0xffff00, 0.6);
                     playerAttackEffects[id].setVisible(false);
                 } else {
                     // Update existing sprite position (server handles physics)
                     // Skip position update for local player if prediction is enabled
                     if (!(predictionEnabled && id === myPlayerId)) {
-                        playerSprites[id].setPosition(player.x, player.y);
+                        playerSprites[id].setPosition(player.x + 200, player.y); // Add 200px offset
                     }
                     
                     // Update player color based on state
                     let playerColor = id === myPlayerId ? 0xff0000 : 0x0000ff;
-                    if (player.blocking) {
+                    let playerAlpha = 1.0;
+                    
+                    if (player.eliminated) {
+                        playerColor = 0x333333; // Dark gray when eliminated
+                        playerAlpha = 0.5;
+                    } else if (player.isDead) {
+                        playerColor = 0x666666; // Gray when dead
+                        playerAlpha = 0.3;
+                    } else if (player.isInvincible) {
+                        playerColor = 0x00ffff; // Cyan when invincible
+                        playerAlpha = 0.7 + Math.sin(Date.now() * 0.01) * 0.3; // Blinking effect
+                    } else if (player.blocking) {
                         playerColor = 0xffff00; // Yellow when blocking
                     } else if (player.health <= 0) {
-                        playerColor = 0x666666; // Gray when dead
+                        playerColor = 0x666666; // Gray when health is 0
                     }
+                    
                     playerSprites[id].setFillStyle(playerColor);
+                    playerSprites[id].setAlpha(playerAlpha);
                     
                     // Update health bar position and fill
                     // Use predicted position for local player, server position for others
                     const healthBarX = (predictionEnabled && id === myPlayerId && clientPlayerState) ? 
-                        clientPlayerState.x : player.x;
+                        clientPlayerState.x + 200 : player.x + 200; // Add 200px offset
                     const healthBarY = (predictionEnabled && id === myPlayerId && clientPlayerState) ? 
                         clientPlayerState.y - 40 : player.y - 40;
                     
@@ -305,7 +404,7 @@
                     
                     // Update attack effect
                     if (player.attacking && playerAttackEffects[id]) {
-                        playerAttackEffects[id].x = player.x;
+                        playerAttackEffects[id].x = player.x + 200; // Add 200px offset
                         playerAttackEffects[id].y = player.y;
                         playerAttackEffects[id].setVisible(true);
                     } else if (playerAttackEffects[id]) {
@@ -324,6 +423,22 @@
             const myPlayer = gameState.players[myPlayerId];
             if (myPlayer) {
                 document.getElementById('health').textContent = `Health: ${myPlayer.health}`;
+                document.getElementById('lives').textContent = `Lives: ${myPlayer.lives}`;
+                
+                // Update match status
+                const statusElement = document.getElementById('match-status');
+                if (myPlayer.eliminated) {
+                    statusElement.textContent = 'ELIMINATED - Spectating';
+                    statusElement.style.color = '#ff6666';
+                } else if (myPlayer.isDead) {
+                    statusElement.textContent = 'RESPAWNING...';
+                    statusElement.style.color = '#ffff66';
+                } else if (myPlayer.isInvincible) {
+                    statusElement.textContent = 'INVINCIBLE';
+                    statusElement.style.color = '#66ffff';
+                } else {
+                    statusElement.textContent = '';
+                }
             }
         }
 
@@ -430,7 +545,7 @@
         
         function updateLocalPlayerHealthBar() {
             if (predictionEnabled && myPlayerId && clientPlayerState && playerHealthBars[myPlayerId]) {
-                const healthBarX = clientPlayerState.x;
+                const healthBarX = clientPlayerState.x + 200; // Add 200px offset
                 const healthBarY = clientPlayerState.y - 40;
                 
                 playerHealthBars[myPlayerId].background.x = healthBarX;
@@ -532,10 +647,10 @@
             // Better direction change handling - reset velocity first
             let newVelocityX = 0;
             
-            if (inputs.left && clientPlayerState.x > 25) {
+            if (inputs.left) {
                 newVelocityX = -moveSpeed;
                 clientPlayerState.x -= moveSpeed;
-            } else if (inputs.right && clientPlayerState.x < 775) {
+            } else if (inputs.right) {
                 newVelocityX = moveSpeed;
                 clientPlayerState.x += moveSpeed;
             }
@@ -622,12 +737,12 @@
             // Update blocking state
             clientPlayerState.blocking = inputs.block;
             
-            // Keep within bounds with exact server logic
-            clientPlayerState.x = Math.max(25, Math.min(775, clientPlayerState.x));
+            // Allow free movement beyond boundaries for fall-off deaths
+            // No horizontal clamping - players can now fall off the sides
             
             // Apply predicted position to sprite
             if (playerSprites[myPlayerId]) {
-                playerSprites[myPlayerId].setPosition(clientPlayerState.x, clientPlayerState.y);
+                playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y); // Add 200px offset
                 updateLocalPlayerHealthBar();
             }
         }
@@ -796,7 +911,7 @@
             if (!playerSprite) return;
             
             // Visual feedback for jumps
-            const jumpEffect = this.add.circle(jumpEvent.position.x, jumpEvent.position.y + 30, 15, 0xFFFF00, 0.7);
+            const jumpEffect = this.add.circle(jumpEvent.position.x + 200, jumpEvent.position.y + 30, 15, 0xFFFF00, 0.7);
             jumpEffect.setDepth(1000); // Render on top
             
             // Animate the effect
@@ -815,7 +930,7 @@
             // Different effects for single vs double jump
             if (jumpEvent.jumpType === 'double') {
                 // Add sparkle effect for double jump
-                const sparkle = this.add.circle(jumpEvent.position.x, jumpEvent.position.y + 25, 8, 0xFF00FF, 0.9);
+                const sparkle = this.add.circle(jumpEvent.position.x + 200, jumpEvent.position.y + 25, 8, 0xFF00FF, 0.9);
                 sparkle.setDepth(1001);
                 
                 this.tweens.add({
@@ -837,7 +952,7 @@
             
             // Visual feedback for dash - create trail effect
             const dashTrail = this.add.rectangle(
-                dashEvent.position.x, 
+                dashEvent.position.x + 200, 
                 dashEvent.position.y, 
                 60, 
                 20, 
@@ -862,7 +977,7 @@
             // Add directional speed lines
             for (let i = 0; i < 3; i++) {
                 const speedLine = this.add.rectangle(
-                    dashEvent.position.x + (dashEvent.direction === 'left' ? 20 : -20) * (i + 1),
+                    dashEvent.position.x + 200 + (dashEvent.direction === 'left' ? 20 : -20) * (i + 1), // Add 200px offset
                     dashEvent.position.y + (Math.random() - 0.5) * 30,
                     15,
                     3,
@@ -908,6 +1023,261 @@
             }
             
             console.log(`Dash interrupted for player ${interruptEvent.playerId}: ${interruptEvent.reason}`);
+        }
+        
+        function handlePlayerDeath(deathEvent) {
+            console.log(`Player ${deathEvent.playerId} died! Lives remaining: ${deathEvent.livesRemaining}`);
+            
+            // Create death effect at death position
+            const deathEffect = this.add.circle(deathEvent.deathPosition.x + 200, deathEvent.deathPosition.y, 50, 0xff0000, 0.8);
+            deathEffect.setDepth(1000);
+            
+            // Animate death effect
+            this.tweens.add({
+                targets: deathEffect,
+                scaleX: 3,
+                scaleY: 3,
+                alpha: 0,
+                duration: 500,
+                ease: 'Power2',
+                onComplete: () => deathEffect.destroy()
+            });
+            
+            // Handle local player death with countdown and fade effects
+            if (deathEvent.playerId === myPlayerId && !deathEvent.isEliminated) {
+                // Screen shake for local player death
+                this.cameras.main.shake(300, 0.02);
+                
+                // Start fade effect on player sprite
+                if (playerSprites[myPlayerId]) {
+                    this.tweens.add({
+                        targets: playerSprites[myPlayerId],
+                        alpha: 0.2,
+                        duration: 3000, // Fade over 3 seconds
+                        ease: 'Linear'
+                    });
+                }
+                
+                // Start respawn countdown
+                startRespawnCountdown();
+            }
+            
+            // For other players, just fade their sprite
+            if (deathEvent.playerId !== myPlayerId && playerSprites[deathEvent.playerId]) {
+                this.tweens.add({
+                    targets: playerSprites[deathEvent.playerId],
+                    alpha: 0.3,
+                    duration: 1000,
+                    ease: 'Power2'
+                });
+            }
+        }
+        
+        function startRespawnCountdown() {
+            const countdownElement = document.getElementById('respawn-countdown');
+            let timeLeft = 3;
+            
+            function updateCountdown() {
+                if (timeLeft > 0) {
+                    countdownElement.textContent = timeLeft;
+                    countdownElement.style.display = 'block';
+                    
+                    // Pulse effect for countdown
+                    countdownElement.style.transform = 'translate(-50%, -50%) scale(1.2)';
+                    setTimeout(() => {
+                        countdownElement.style.transform = 'translate(-50%, -50%) scale(1.0)';
+                    }, 200);
+                    
+                    timeLeft--;
+                    setTimeout(updateCountdown, 1000);
+                } else {
+                    countdownElement.style.display = 'none';
+                }
+            }
+            
+            updateCountdown();
+        }
+        
+        function handlePlayerRespawn(respawnEvent) {
+            console.log(`Player ${respawnEvent.playerId} respawned with invincibility`);
+            
+            // Restore sprite alpha for respawned player
+            if (playerSprites[respawnEvent.playerId]) {
+                // Stop any existing fade tweens
+                this.tweens.killTweensOf(playerSprites[respawnEvent.playerId]);
+                // Restore full alpha
+                playerSprites[respawnEvent.playerId].setAlpha(1.0);
+            }
+            
+            // Create respawn effect
+            const respawnEffect = this.add.circle(respawnEvent.position.x + 200, respawnEvent.position.y, 30, 0x00ffff, 0.7);
+            respawnEffect.setDepth(1000);
+            
+            // Animate respawn effect
+            this.tweens.add({
+                targets: respawnEffect,
+                scaleX: 2,
+                scaleY: 2,
+                alpha: 0,
+                duration: 400,
+                ease: 'Power2',
+                onComplete: () => respawnEffect.destroy()
+            });
+            
+            // Add sparkle effects
+            for (let i = 0; i < 8; i++) {
+                const sparkle = this.add.circle(
+                    respawnEvent.position.x + 200 + (Math.random() - 0.5) * 60, // Add 200px offset
+                    respawnEvent.position.y + (Math.random() - 0.5) * 60,
+                    3,
+                    0xffffff,
+                    0.9
+                );
+                sparkle.setDepth(1001);
+                
+                this.tweens.add({
+                    targets: sparkle,
+                    scaleX: 2,
+                    scaleY: 2,
+                    alpha: 0,
+                    duration: 300 + Math.random() * 200,
+                    ease: 'Power1',
+                    onComplete: () => sparkle.destroy()
+                });
+            }
+            
+            // Hide countdown for local player
+            if (respawnEvent.playerId === myPlayerId) {
+                const countdownElement = document.getElementById('respawn-countdown');
+                countdownElement.style.display = 'none';
+            }
+        }
+        
+        function handlePlayerElimination(eliminationEvent) {
+            console.log(`Player ${eliminationEvent.playerId} eliminated!`);
+            
+            // Create elimination effect
+            const eliminationEffect = this.add.circle(eliminationEvent.finalPosition.x + 200, eliminationEvent.finalPosition.y, 80, 0xff6600, 0.9);
+            eliminationEffect.setDepth(1000);
+            
+            // Animate elimination effect
+            this.tweens.add({
+                targets: eliminationEffect,
+                scaleX: 4,
+                scaleY: 4,
+                alpha: 0,
+                duration: 800,
+                ease: 'Power3',
+                onComplete: () => eliminationEffect.destroy()
+            });
+            
+            // Add text effect
+            const eliminationText = this.add.text(eliminationEvent.finalPosition.x + 200, eliminationEvent.finalPosition.y - 50, 'ELIMINATED!', {
+                fontSize: '24px',
+                fill: '#ff6600',
+                stroke: '#000000',
+                strokeThickness: 2
+            });
+            eliminationText.setOrigin(0.5);
+            eliminationText.setDepth(1001);
+            
+            this.tweens.add({
+                targets: eliminationText,
+                y: eliminationText.y - 100,
+                alpha: 0,
+                duration: 1000,
+                ease: 'Power2',
+                onComplete: () => eliminationText.destroy()
+            });
+        }
+        
+        function handleMatchEnd(matchEndEvent) {
+            console.log(`Match ended! Winner: ${matchEndEvent.winnerId}`);
+            
+            // Create match end overlay
+            const overlay = this.add.rectangle(600, 500, 1200, 1000, 0x000000, 0.7); // Expanded to 1200x1000, centered at (600, 500)
+            overlay.setDepth(2000);
+            
+            // Winner text
+            const winnerText = matchEndEvent.winnerId === myPlayerId ? 'YOU WIN!' : 
+                              matchEndEvent.winnerId ? 'MATCH OVER' : 'DRAW!';
+            const winnerColor = matchEndEvent.winnerId === myPlayerId ? '#00ff00' : '#ffffff';
+            
+            const matchEndText = this.add.text(600, 400, winnerText, { // Centered at 600 for 1200px canvas
+                fontSize: '48px',
+                fill: winnerColor,
+                stroke: '#000000',
+                strokeThickness: 3
+            });
+            matchEndText.setOrigin(0.5);
+            matchEndText.setDepth(2001);
+            
+            // Final standings text
+            let standingsText = 'Final Standings:\n';
+            matchEndEvent.finalStandings.forEach((standing, index) => {
+                const position = index + 1;
+                const playerText = standing.playerId === myPlayerId ? 'YOU' : `Player ${standing.playerId.slice(-4)}`;
+                standingsText += `${position}. ${playerText} - ${standing.lives} lives\n`;
+            });
+            
+            const standingsDisplay = this.add.text(600, 550, standingsText, { // Centered at 600 for 1200px canvas
+                fontSize: '18px',
+                fill: '#ffffff',
+                align: 'center'
+            });
+            standingsDisplay.setOrigin(0.5);
+            standingsDisplay.setDepth(2001);
+            
+            // Store overlay elements for cleanup
+            this.matchEndOverlay = [overlay, matchEndText, standingsDisplay];
+        }
+        
+        function handleMatchReset(resetEvent) {
+            console.log('Match reset - new round starting!');
+            
+            // Clean up match end overlay
+            if (this.matchEndOverlay) {
+                this.matchEndOverlay.forEach(element => element.destroy());
+                this.matchEndOverlay = null;
+            }
+            
+            // Create new round announcement
+            const newRoundText = this.add.text(600, 500, 'NEW ROUND!', { // Centered at 600 for 1200px canvas
+                fontSize: '36px',
+                fill: '#ffff00',
+                stroke: '#000000',
+                strokeThickness: 2
+            });
+            newRoundText.setOrigin(0.5);
+            newRoundText.setDepth(1000);
+            
+            // Animate and remove announcement
+            this.tweens.add({
+                targets: newRoundText,
+                scaleX: 1.5,
+                scaleY: 1.5,
+                alpha: 0,
+                duration: 2000,
+                ease: 'Power2',
+                onComplete: () => newRoundText.destroy()
+            });
+        }
+        
+        function handleInvincibilityEnd(invincibilityEvent) {
+            console.log(`Player ${invincibilityEvent.playerId} invincibility ended`);
+            
+            // Visual feedback for invincibility ending (small flash effect)
+            if (playerSprites[invincibilityEvent.playerId]) {
+                const player = playerSprites[invincibilityEvent.playerId];
+                this.tweens.add({
+                    targets: player,
+                    alpha: 0.3,
+                    duration: 100,
+                    yoyo: true,
+                    repeat: 2,
+                    ease: 'Power1'
+                });
+            }
         }
     </script>
 </body>

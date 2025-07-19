@@ -53,6 +53,179 @@
             border: 3px solid #ff6666;
             box-shadow: 0 0 30px rgba(255, 102, 102, 0.5);
         }
+        
+        /* Game Start Countdown */
+        #game-start-countdown {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.95);
+            color: #4CAF50;
+            padding: 40px;
+            border-radius: 20px;
+            font-size: 72px;
+            font-weight: bold;
+            text-align: center;
+            display: none;
+            z-index: 3000;
+            border: 4px solid #4CAF50;
+            box-shadow: 0 0 40px rgba(76, 175, 80, 0.6);
+            animation: pulse 0.5s ease-in-out infinite alternate;
+        }
+        
+        #game-start-countdown .countdown-text {
+            font-size: 28px;
+            margin-bottom: 10px;
+            color: #81C784;
+        }
+        
+        @keyframes pulse {
+            from { transform: translate(-50%, -50%) scale(1); }
+            to { transform: translate(-50%, -50%) scale(1.05); }
+        }
+        
+        /* Room Management UI Styles */
+        #room-ui {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.95);
+            color: white;
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            z-index: 1500;
+            border: 2px solid #4CAF50;
+            box-shadow: 0 0 30px rgba(76, 175, 80, 0.3);
+            font-family: Arial, sans-serif;
+            min-width: 400px;
+        }
+        
+        #room-ui h1 {
+            margin: 0 0 30px 0;
+            color: #4CAF50;
+            font-size: 36px;
+            text-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+        
+        #room-ui h2 {
+            margin: 20px 0 15px 0;
+            color: #ffffff;
+            font-size: 24px;
+        }
+        
+        .room-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #333;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .room-button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 10px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        
+        .room-button:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.4);
+        }
+        
+        .room-button:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .room-input {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid #4CAF50;
+            color: white;
+            padding: 12px 20px;
+            font-size: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin: 10px;
+            width: 120px;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+        }
+        
+        .room-input:focus {
+            outline: none;
+            border-color: #66BB6A;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+        
+        #room-code-display {
+            font-size: 48px;
+            font-weight: bold;
+            color: #4CAF50;
+            background: rgba(76, 175, 80, 0.1);
+            padding: 20px;
+            border-radius: 15px;
+            letter-spacing: 8px;
+            text-shadow: 0 0 15px rgba(76, 175, 80, 0.7);
+            border: 2px solid #4CAF50;
+            margin: 20px 0;
+        }
+        
+        #player-list {
+            text-align: left;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        
+        .player-item {
+            padding: 8px 12px;
+            margin: 5px 0;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .player-host {
+            background: rgba(76, 175, 80, 0.2);
+            border-left: 4px solid #4CAF50;
+        }
+        
+        .error-message {
+            color: #f44336;
+            background: rgba(244, 67, 54, 0.1);
+            border: 1px solid #f44336;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
+        .success-message {
+            color: #4CAF50;
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid #4CAF50;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
+        #room-ui.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -62,8 +235,59 @@
         <div id="lives">Lives: 3</div>
         <div id="match-status"></div>
     </div>
+    
+    <!-- Room Management UI -->
+    <div id="room-ui">
+        <h1>🥊 Fighter Game</h1>
+        
+        <!-- Main Menu (when not in room) -->
+        <div id="main-menu">
+            <div class="room-section">
+                <h2>Create a New Game</h2>
+                <button id="create-room-btn" class="room-button">Create Room</button>
+                <p style="color: #aaa; font-size: 14px;">Share the room code with friends!</p>
+            </div>
+            
+            <div class="room-section">
+                <h2>Join a Game</h2>
+                <input type="text" id="room-code-input" class="room-input" placeholder="ROOM" maxlength="4" />
+                <br>
+                <button id="join-room-btn" class="room-button">Join Room</button>
+            </div>
+        </div>
+        
+        <!-- Room Lobby (when in room) -->
+        <div id="room-lobby" style="display: none;">
+            <h2>Room Code</h2>
+            <div id="room-code-display">ABCD</div>
+            <p style="color: #aaa;">Share this code with your friends!</p>
+            
+            <div class="room-section">
+                <h2>Players (<span id="room-player-count">1</span>/8)</h2>
+                <div id="player-list">
+                    <!-- Players will be added here dynamically -->
+                </div>
+            </div>
+            
+            <div class="room-section">
+                <button id="start-game-btn" class="room-button" style="display: none;">Start Game</button>
+                <button id="leave-room-btn" class="room-button" style="background: #f44336;">Leave Room</button>
+            </div>
+        </div>
+        
+        <!-- Messages -->
+        <div id="room-messages"></div>
+    </div>
+    
     <div id="game-container"></div>
     <div id="respawn-countdown"></div>
+    
+    <!-- Game Start Countdown -->
+    <div id="game-start-countdown">
+        <div class="countdown-text">Game Starting...</div>
+        <div class="countdown-number">3</div>
+    </div>
+    
     <div id="controls">
         <div>Controls:</div>
         <div>Left/Right: Move</div>
@@ -141,6 +365,228 @@
             JUMP_VELOCITY_SINGLE: -500,
             JUMP_VELOCITY_DOUBLE: -400
         };
+
+        // ==================== ROOM MANAGEMENT SYSTEM ====================
+        
+        // Room management variables
+        let currentRoom = null;
+        let isHost = false;
+        let gameStarted = false;
+        
+        // Room UI Elements
+        const roomUI = document.getElementById('room-ui');
+        const mainMenu = document.getElementById('main-menu');
+        const roomLobby = document.getElementById('room-lobby');
+        const createRoomBtn = document.getElementById('create-room-btn');
+        const joinRoomBtn = document.getElementById('join-room-btn');
+        const roomCodeInput = document.getElementById('room-code-input');
+        const roomCodeDisplay = document.getElementById('room-code-display');
+        const playerList = document.getElementById('player-list');
+        const playerCount = document.getElementById('room-player-count');
+        const startGameBtn = document.getElementById('start-game-btn');
+        const leaveRoomBtn = document.getElementById('leave-room-btn');
+        const roomMessages = document.getElementById('room-messages');
+        
+        // Room management functions
+        function showMessage(message, type = 'info') {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = type === 'error' ? 'error-message' : 'success-message';
+            messageDiv.textContent = message;
+            roomMessages.appendChild(messageDiv);
+            
+            // Auto-remove message after 5 seconds
+            setTimeout(() => {
+                if (messageDiv.parentNode) {
+                    messageDiv.parentNode.removeChild(messageDiv);
+                }
+            }, 5000);
+        }
+        
+        function showMainMenu() {
+            mainMenu.style.display = 'block';
+            roomLobby.style.display = 'none';
+            roomUI.classList.remove('hidden');
+            gameStarted = false;
+        }
+        
+        function showRoomLobby(roomCode, hostStatus) {
+            mainMenu.style.display = 'none';
+            roomLobby.style.display = 'block';
+            roomCodeDisplay.textContent = roomCode;
+            isHost = hostStatus;
+            
+            // Show start button only for host
+            startGameBtn.style.display = isHost ? 'block' : 'none';
+        }
+        
+        function hideRoomUI() {
+            roomUI.classList.add('hidden');
+            gameStarted = true;
+        }
+        
+        function updatePlayerList(players) {
+            playerList.innerHTML = '';
+            
+            if (players && players.length > 0) {
+                players.forEach(player => {
+                    const playerDiv = document.createElement('div');
+                    playerDiv.className = 'player-item';
+                    if (player.isHost) {
+                        playerDiv.classList.add('player-host');
+                    }
+                    
+                    playerDiv.innerHTML = `
+                        <span>Player ${player.socketId.substring(0, 8)}...</span>
+                        <span>${player.isHost ? '👑 Host' : '🕹️ Player'}</span>
+                    `;
+                    
+                    playerList.appendChild(playerDiv);
+                });
+                
+                playerCount.textContent = players.length;
+            } else {
+                playerCount.textContent = '0';
+            }
+        }
+        
+        function createRoom() {
+            if (!socket) {
+                showMessage('Not connected to server', 'error');
+                return;
+            }
+            
+            createRoomBtn.disabled = true;
+            createRoomBtn.textContent = 'Creating...';
+            
+            socket.emit('createRoom', (response) => {
+                createRoomBtn.disabled = false;
+                createRoomBtn.textContent = 'Create Room';
+                
+                if (response.success) {
+                    currentRoom = {
+                        code: response.roomCode,
+                        isHost: response.isHost,
+                        playerCount: response.playerCount
+                    };
+                    
+                    showRoomLobby(response.roomCode, response.isHost);
+                    showMessage(`Room ${response.roomCode} created successfully!`, 'success');
+                    
+                    // Request updated room info
+                    socket.emit('getRoomInfo', (roomInfo) => {
+                        if (roomInfo.success) {
+                            updatePlayerList(roomInfo.players);
+                        }
+                    });
+                } else {
+                    showMessage(response.error, 'error');
+                }
+            });
+        }
+        
+        function joinRoom() {
+            const roomCode = roomCodeInput.value.trim().toUpperCase();
+            
+            if (!roomCode || roomCode.length !== 4) {
+                showMessage('Please enter a 4-letter room code', 'error');
+                return;
+            }
+            
+            if (!socket) {
+                showMessage('Not connected to server', 'error');
+                return;
+            }
+            
+            joinRoomBtn.disabled = true;
+            joinRoomBtn.textContent = 'Joining...';
+            
+            socket.emit('joinRoom', { roomCode }, (response) => {
+                joinRoomBtn.disabled = false;
+                joinRoomBtn.textContent = 'Join Room';
+                
+                if (response.success) {
+                    currentRoom = {
+                        code: response.roomCode,
+                        isHost: response.isHost,
+                        playerCount: response.playerCount
+                    };
+                    
+                    showRoomLobby(response.roomCode, response.isHost);
+                    showMessage(`Joined room ${response.roomCode}!`, 'success');
+                    roomCodeInput.value = '';
+                    
+                    // Request updated room info
+                    socket.emit('getRoomInfo', (roomInfo) => {
+                        if (roomInfo.success) {
+                            updatePlayerList(roomInfo.players);
+                        }
+                    });
+                } else {
+                    showMessage(response.error, 'error');
+                }
+            });
+        }
+        
+        function leaveRoom() {
+            if (!socket || !currentRoom) return;
+            
+            socket.emit('leaveRoom', (response) => {
+                if (response.success) {
+                    currentRoom = null;
+                    isHost = false;
+                    showMainMenu();
+                    showMessage('Left room successfully', 'success');
+                } else {
+                    showMessage(response.error, 'error');
+                }
+            });
+        }
+        
+        function startGame() {
+            if (!isHost) {
+                showMessage('Only the host can start the game', 'error');
+                return;
+            }
+            
+            // Disable the start button to prevent multiple clicks
+            startGameBtn.disabled = true;
+            startGameBtn.textContent = 'Starting...';
+            
+            // Emit startGame event to server
+            socket.emit('startGame', (response) => {
+                if (response.success) {
+                    // Game start countdown will be handled by socket events
+                    console.log('Game start initiated:', response.message);
+                } else {
+                    showMessage(response.error, 'error');
+                    // Re-enable the button if there was an error
+                    startGameBtn.disabled = false;
+                    startGameBtn.textContent = 'Start Game';
+                }
+            });
+        }
+        
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            createRoomBtn.addEventListener('click', createRoom);
+            joinRoomBtn.addEventListener('click', joinRoom);
+            leaveRoomBtn.addEventListener('click', leaveRoom);
+            startGameBtn.addEventListener('click', startGame);
+            
+            // Handle Enter key in room code input
+            roomCodeInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    joinRoom();
+                }
+            });
+            
+            // Auto-uppercase room code input
+            roomCodeInput.addEventListener('input', (e) => {
+                e.target.value = e.target.value.toUpperCase();
+            });
+        });
+        
+        // ==================== END ROOM MANAGEMENT SYSTEM ====================
 
         function preload() {
             // Create simple colored rectangles for sprites - extend background
@@ -283,6 +729,127 @@
             socket.on('playerInvincibilityEnd', (invincibilityEvent) => {
                 handleInvincibilityEnd.call(this, invincibilityEvent);
             });
+            
+            // ==================== ROOM EVENT HANDLERS ====================
+            
+            // Listen for new players joining the room
+            socket.on('playerJoinedRoom', (event) => {
+                if (currentRoom) {
+                    showMessage(`Player joined the room (${event.playerCount}/8)`, 'success');
+                    
+                    // Request updated room info
+                    socket.emit('getRoomInfo', (roomInfo) => {
+                        if (roomInfo.success) {
+                            updatePlayerList(roomInfo.players);
+                        }
+                    });
+                }
+            });
+            
+            // Listen for players leaving the room
+            socket.on('playerLeftRoom', (event) => {
+                if (currentRoom) {
+                    let message = `Player left the room (${event.playerCount}/8)`;
+                    
+                    if (event.reason === 'disconnect') {
+                        message = `Player disconnected (${event.playerCount}/8)`;
+                    }
+                    
+                    showMessage(message, 'info');
+                    
+                    // Update host status if needed
+                    if (event.newHostId === socket.id) {
+                        isHost = true;
+                        startGameBtn.style.display = 'block';
+                        showMessage('You are now the host!', 'success');
+                    }
+                    
+                    // Request updated room info
+                    socket.emit('getRoomInfo', (roomInfo) => {
+                        if (roomInfo.success) {
+                            updatePlayerList(roomInfo.players);
+                        }
+                    });
+                }
+            });
+            
+            // Listen for room closure
+            socket.on('roomClosed', (event) => {
+                if (currentRoom && event.code === currentRoom.code) {
+                    currentRoom = null;
+                    isHost = false;
+                    showMainMenu();
+                    
+                    let reason = 'Unknown reason';
+                    if (event.reason === 'cleanup') {
+                        reason = 'Room was inactive for too long';
+                    }
+                    
+                    showMessage(`Room closed: ${reason}`, 'error');
+                }
+            });
+            
+            // Listen for room errors
+            socket.on('roomError', (error) => {
+                showMessage(error.message, 'error');
+            });
+            
+            // ==================== GAME START EVENT HANDLERS ====================
+            
+            // Listen for game start countdown
+            socket.on('gameStartCountdown', (event) => {
+                console.log('Game start countdown:', event.countdown);
+                
+                const countdownEl = document.getElementById('game-start-countdown');
+                const countdownNumberEl = countdownEl.querySelector('.countdown-number');
+                
+                // Show countdown with current number
+                countdownNumberEl.textContent = event.countdown;
+                countdownEl.style.display = 'block';
+                
+                // Play countdown sound effect (if available)
+                // You could add audio here: new Audio('countdown.mp3').play();
+            });
+            
+            // Listen for game started
+            socket.on('gameStarted', (event) => {
+                console.log('Game started!', event);
+                
+                const countdownEl = document.getElementById('game-start-countdown');
+                const countdownNumberEl = countdownEl.querySelector('.countdown-number');
+                const countdownTextEl = countdownEl.querySelector('.countdown-text');
+                
+                // Show "FIGHT!" message
+                countdownTextEl.textContent = 'FIGHT!';
+                countdownNumberEl.textContent = '';
+                countdownEl.style.color = '#FF6B35'; // Orange color for "FIGHT!"
+                
+                // Hide countdown after 1 second and start game
+                setTimeout(() => {
+                    countdownEl.style.display = 'none';
+                    
+                    // Reset countdown display for next time
+                    countdownTextEl.textContent = 'Game Starting...';
+                    countdownEl.style.color = '#4CAF50';
+                    
+                    // Hide room UI and start the game
+                    hideRoomUI();
+                    gameStarted = true;
+                    
+                    // Reset the start button for next game
+                    startGameBtn.disabled = false;
+                    startGameBtn.textContent = 'Start Game';
+                    
+                    showMessage('Game started! Fight!', 'success');
+                }, 1000);
+                
+                // Play game start sound effect (if available)
+                // You could add audio here: new Audio('fight.mp3').play();
+            });
+            
+            // ==================== END GAME START EVENT HANDLERS ====================
+            
+            // ==================== END ROOM EVENT HANDLERS ====================
         }
 
         function updatePlayerSprites() {

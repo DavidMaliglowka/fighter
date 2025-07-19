@@ -40,6 +40,254 @@ const DASH_DECAY_RATE = 0.85; // Velocity decay factor per frame (faster decay t
 // Platform system
 const { PLATFORMS, PLATFORM_TYPES, GAME_BOUNDS, PLATFORM_PHYSICS, PlatformUtils } = platformConfig;
 
+// ==================== SESSION CODE SYSTEM ====================
+
+// Room system constants
+const ROOM_CONFIG = {
+    CODE_LENGTH: 4,
+    MAX_PLAYERS: 8,
+    CLEANUP_INTERVAL: 30000, // 30 seconds
+    EMPTY_ROOM_TIMEOUT: 300000, // 5 minutes in milliseconds
+    INACTIVE_ROOM_TIMEOUT: 3600000, // 1 hour in milliseconds
+    ALLOWED_CHARACTERS: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+};
+
+// Room storage - In production, this would be Redis
+const rooms = new Map();
+
+// Room code generation and validation functions
+function generateRoomCode() {
+    const chars = ROOM_CONFIG.ALLOWED_CHARACTERS;
+    let code;
+    let attempts = 0;
+    const maxAttempts = 1000;
+    
+    do {
+        code = '';
+        for (let i = 0; i < ROOM_CONFIG.CODE_LENGTH; i++) {
+            code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        attempts++;
+        
+        if (attempts > maxAttempts) {
+            throw new Error('Unable to generate unique room code after maximum attempts');
+        }
+    } while (rooms.has(code));
+    
+    return code;
+}
+
+function validateRoomCode(code) {
+    if (!code || typeof code !== 'string') {
+        return { valid: false, error: 'Room code must be a string' };
+    }
+    
+    const normalizedCode = code.toUpperCase().trim();
+    
+    if (normalizedCode.length !== ROOM_CONFIG.CODE_LENGTH) {
+        return { valid: false, error: `Room code must be exactly ${ROOM_CONFIG.CODE_LENGTH} characters` };
+    }
+    
+    if (!/^[A-Z]+$/.test(normalizedCode)) {
+        return { valid: false, error: 'Room code must contain only letters' };
+    }
+    
+    return { valid: true, code: normalizedCode };
+}
+
+function createRoom(hostSocketId) {
+    const code = generateRoomCode();
+    const room = {
+        code: code,
+        hostId: hostSocketId,
+        players: new Map(), // socketId -> playerData
+        createdAt: Date.now(),
+        lastActivity: Date.now(),
+        isActive: true,
+        gameState: {
+            gameStarted: false,
+            matchInProgress: false
+        }
+    };
+    
+    rooms.set(code, room);
+    console.log(`Room created: ${code} by host ${hostSocketId}`);
+    
+    return room;
+}
+
+function joinRoom(code, socketId, playerData = null) {
+    const validation = validateRoomCode(code);
+    if (!validation.valid) {
+        return { success: false, error: validation.error };
+    }
+    
+    const normalizedCode = validation.code;
+    const room = rooms.get(normalizedCode);
+    
+    if (!room) {
+        return { success: false, error: 'Room not found' };
+    }
+    
+    if (!room.isActive) {
+        return { success: false, error: 'Room is no longer active' };
+    }
+    
+    if (room.players.size >= ROOM_CONFIG.MAX_PLAYERS) {
+        return { success: false, error: 'Room is full' };
+    }
+    
+    if (room.players.has(socketId)) {
+        return { success: false, error: 'Already in this room' };
+    }
+    
+    // Add player to room
+    room.players.set(socketId, playerData || {});
+    room.lastActivity = Date.now();
+    
+    console.log(`Player ${socketId} joined room ${normalizedCode} (${room.players.size}/${ROOM_CONFIG.MAX_PLAYERS})`);
+    
+    return { success: true, room: room };
+}
+
+function leaveRoom(socketId) {
+    let leftRoom = null;
+    
+    for (const [code, room] of rooms.entries()) {
+        if (room.players.has(socketId)) {
+            room.players.delete(socketId);
+            room.lastActivity = Date.now();
+            leftRoom = room;
+            
+            console.log(`Player ${socketId} left room ${code} (${room.players.size}/${ROOM_CONFIG.MAX_PLAYERS})`);
+            
+            // If room is empty, mark for cleanup
+            if (room.players.size === 0) {
+                room.emptyAt = Date.now();
+            }
+            
+            // If host left and there are other players, assign new host
+            if (room.hostId === socketId && room.players.size > 0) {
+                const newHostId = room.players.keys().next().value;
+                room.hostId = newHostId;
+                console.log(`New host for room ${code}: ${newHostId}`);
+            }
+            
+            break;
+        }
+    }
+    
+    return leftRoom;
+}
+
+function getRoomByPlayer(socketId) {
+    for (const [code, room] of rooms.entries()) {
+        if (room.players.has(socketId)) {
+            return { code, room };
+        }
+    }
+    return null;
+}
+
+function updateRoomActivity(code) {
+    const room = rooms.get(code);
+    if (room) {
+        room.lastActivity = Date.now();
+        if (room.emptyAt) {
+            delete room.emptyAt;
+        }
+    }
+}
+
+// Room cleanup system
+function cleanupRooms() {
+    const now = Date.now();
+    const roomsToDelete = [];
+    
+    for (const [code, room] of rooms.entries()) {
+        let shouldDelete = false;
+        
+        // Remove empty rooms after timeout
+        if (room.players.size === 0 && room.emptyAt && 
+            (now - room.emptyAt) > ROOM_CONFIG.EMPTY_ROOM_TIMEOUT) {
+            shouldDelete = true;
+            console.log(`Cleaning up empty room: ${code}`);
+        }
+        
+        // Remove inactive rooms after timeout
+        if ((now - room.lastActivity) > ROOM_CONFIG.INACTIVE_ROOM_TIMEOUT) {
+            shouldDelete = true;
+            console.log(`Cleaning up inactive room: ${code} (inactive for ${Math.round((now - room.lastActivity) / 60000)} minutes)`);
+        }
+        
+        if (shouldDelete) {
+            roomsToDelete.push(code);
+        }
+    }
+    
+    // Delete marked rooms
+    roomsToDelete.forEach(code => {
+        const room = rooms.get(code);
+        if (room) {
+            // Notify any remaining players
+            room.players.forEach((_, socketId) => {
+                const socket = io.sockets.sockets.get(socketId);
+                if (socket) {
+                    socket.emit('roomClosed', { reason: 'cleanup', code });
+                    socket.leave(code);
+                }
+            });
+        }
+        rooms.delete(code);
+    });
+    
+    if (roomsToDelete.length > 0) {
+        console.log(`Cleaned up ${roomsToDelete.length} room(s). Active rooms: ${rooms.size}`);
+    }
+}
+
+// Start cleanup interval
+setInterval(cleanupRooms, ROOM_CONFIG.CLEANUP_INTERVAL);
+
+// ==================== END SESSION CODE SYSTEM ====================
+
+// Helper function for room-scoped broadcasts
+function emitToPlayerRoom(socketId, event, data) {
+    const roomInfo = getRoomByPlayer(socketId);
+    if (roomInfo) {
+        io.to(roomInfo.code).emit(event, data);
+        updateRoomActivity(roomInfo.code);
+    } else {
+        // Fallback for players not in rooms (shouldn't happen in normal flow)
+        console.warn(`Player ${socketId} not in any room, skipping ${event} broadcast`);
+    }
+}
+
+// Helper function to broadcast to all rooms
+function emitToAllRooms(event, data) {
+    for (const [roomCode, room] of rooms.entries()) {
+        if (room.isActive && room.players.size > 0) {
+            io.to(roomCode).emit(event, data);
+            updateRoomActivity(roomCode);
+        }
+    }
+}
+
+// Helper function to get all players in the same room as a given player
+function getPlayersInSameRoom(socketId) {
+    const roomInfo = getRoomByPlayer(socketId);
+    if (roomInfo) {
+        const roomPlayers = {};
+        for (const playerSocketId of roomInfo.room.players.keys()) {
+            if (players[playerSocketId]) {
+                roomPlayers[playerSocketId] = players[playerSocketId];
+            }
+        }
+        return roomPlayers;
+    }
+    return {};
+}
+
 // Helper function to calculate distance between two points
 function getDistance(player1, player2) {
     const dx = player1.x - player2.x;
@@ -80,12 +328,12 @@ function checkPlayerDeath(player, playerId) {
             player.eliminated = true;
             console.log(`Player ${playerId} eliminated!`);
             
-            // Emit elimination event
-            io.emit('playerEliminated', {
-                playerId: playerId,
-                finalPosition: { x: player.x, y: player.y },
-                timestamp: Date.now()
-            });
+                    // Emit elimination event to room
+        emitToPlayerRoom(playerId, 'playerEliminated', {
+            playerId: playerId,
+            finalPosition: { x: player.x, y: player.y },
+            timestamp: Date.now()
+        });
             
             // Check for match end
             checkMatchEnd();
@@ -98,8 +346,8 @@ function checkPlayerDeath(player, playerId) {
             }, RESPAWN_DELAY);
         }
         
-        // Emit death event to all clients
-        io.emit('playerDeath', {
+        // Emit death event to room
+        emitToPlayerRoom(playerId, 'playerDeath', {
             playerId: playerId,
             livesRemaining: player.lives,
             deathPosition: { x: player.x, y: player.y },
@@ -139,8 +387,8 @@ function respawnPlayer(player, playerId) {
     
     console.log(`Player ${playerId} respawned at (${spawnX}, ${spawnY}) with invincibility`);
     
-    // Emit respawn event
-    io.emit('playerRespawn', {
+    // Emit respawn event to room
+    emitToPlayerRoom(playerId, 'playerRespawn', {
         playerId: playerId,
         position: { x: spawnX, y: spawnY },
         livesRemaining: player.lives,
@@ -158,8 +406,8 @@ function checkMatchEnd() {
         
         console.log(`Match ended! Winner: ${winnerId || 'None (draw)'}`);
         
-        // Emit match end event
-        io.emit('matchEnd', {
+        // Emit match end event to all rooms
+        emitToAllRooms('matchEnd', {
             winnerId: winnerId,
             finalStandings: Object.keys(players).map(id => ({
                 playerId: id,
@@ -201,8 +449,8 @@ function resetMatch() {
         player.jumpsRemaining = 2;
     }
     
-    // Emit match reset event
-    io.emit('matchReset', {
+    // Emit match reset event to all rooms
+    emitToAllRooms('matchReset', {
         message: 'New round starting!',
         timestamp: Date.now()
     });
@@ -387,7 +635,7 @@ function performJump(player, currentTime, socket) {
         timestamp: currentTime
     };
     
-    io.emit('playerJump', jumpEvent);
+            emitToPlayerRoom(socket.id, 'playerJump', jumpEvent);
 }
 
 // Enhanced dash validation with anti-cheat measures
@@ -452,35 +700,35 @@ function performDash(player, direction, currentTime, socket) {
         timestamp: currentTime
     };
     
-    io.emit('playerDash', dashEvent);
+            emitToPlayerRoom(socket.id, 'playerDash', dashEvent);
     
     console.log(`Player ${socket.id} dashed ${direction} with velocity ${player.dashVelocity}`);
 }
 
 // Interrupt dash due to external factors (damage, collision, etc.)
-function interruptDash(player, reason = 'unknown') {
+function interruptDash(player, playerId, reason = 'unknown') {
     if (!player.isDashing) return false;
     
     player.isDashing = false;
     player.dashDirection = 0;
     player.dashVelocity = 0;
     
-    console.log(`Player dash interrupted: ${reason}`);
+    console.log(`Player ${playerId} dash interrupted: ${reason}`);
     
     // Broadcast dash interruption to clients for visual cleanup
     const interruptEvent = {
-        playerId: player.id || 'unknown',
+        playerId: playerId,
         reason: reason,
         position: { x: player.x, y: player.y },
         timestamp: Date.now()
     };
     
-    io.emit('dashInterrupted', interruptEvent);
+        emitToPlayerRoom(playerId, 'dashInterrupted', interruptEvent);
     return true;
 }
 
 // Enhanced player state validation and correction
-function validatePlayerDashState(player) {
+function validatePlayerDashState(player, playerId) {
     // Ensure dash state consistency
     if (player.isDashing) {
         const currentTime = Date.now();
@@ -488,14 +736,14 @@ function validatePlayerDashState(player) {
         
         // Auto-cleanup stale dash states (safety net)
         if (dashElapsed > DASH_DURATION * 2) {
-            console.log(`Warning: Stale dash state detected for player, auto-cleaning`);
-            interruptDash(player, 'stale_state');
+            console.log(`Warning: Stale dash state detected for player ${playerId}, auto-cleaning`);
+            interruptDash(player, playerId, 'stale_state');
         }
         
         // Validate dash direction consistency
         if (player.dashDirection === 0 && player.isDashing) {
-            console.log(`Warning: Invalid dash direction detected, interrupting`);
-            interruptDash(player, 'invalid_direction');
+            console.log(`Warning: Invalid dash direction detected for player ${playerId}, interrupting`);
+            interruptDash(player, playerId, 'invalid_direction');
         }
     }
     
@@ -570,8 +818,8 @@ function updatePhysics() {
                 // Reset drop-down state when landing on any platform
                 player.droppingFromPlatform = null;
                 
-                // Emit platform landing event for visual effects
-                io.emit('playerLanded', {
+                // Emit platform landing event for visual effects to room
+                emitToPlayerRoom(playerId, 'playerLanded', {
                     playerId: playerId,
                     position: { x: player.x, y: player.y },
                     timestamp: Date.now()
@@ -630,7 +878,7 @@ function updatePhysics() {
         }
         
         // Validate and clean up dash state consistency
-        validatePlayerDashState(player);
+        validatePlayerDashState(player, playerId);
         
         // Handle invincibility timer
         if (player.isInvincible && Date.now() > player.invincibilityEndTime) {
@@ -638,10 +886,10 @@ function updatePhysics() {
             console.log(`Player ${playerId} invincibility ended`);
             
             // Emit invincibility end event
-            io.emit('playerInvincibilityEnd', {
-                playerId: playerId,
-                timestamp: Date.now()
-            });
+                    emitToPlayerRoom(playerId, 'playerInvincibilityEnd', {
+            playerId: playerId,
+            timestamp: Date.now()
+        });
         }
         
         // Check for player death (fall-off boundaries)
@@ -685,7 +933,7 @@ function handleCombat() {
                     
                     // Interrupt dash if target was dashing when hit
                     if (target.isDashing) {
-                        interruptDash(target, 'damaged');
+                        interruptDash(target, targetId, 'damaged');
                     }
                     
                     // Knockback effect
@@ -746,8 +994,282 @@ io.on('connection', (socket) => {
         eliminated: false
     };
     
-    // Send initial game state to new player
-    socket.emit('gameState', { players });
+    // Send empty initial game state (players will get real state after joining a room)
+    socket.emit('gameState', { 
+        players: {}, 
+        platforms: PLATFORMS,
+        serverTime: Date.now(),
+        tick: 0,
+        roomCode: null,
+        playerCount: 0
+    });
+    
+    // ==================== ROOM MANAGEMENT EVENT HANDLERS ====================
+    
+    // Handle room creation
+    socket.on('createRoom', (callback) => {
+        try {
+            // Check if player is already in a room
+            const existingRoom = getRoomByPlayer(socket.id);
+            if (existingRoom) {
+                return callback({ 
+                    success: false, 
+                    error: 'Already in a room. Leave current room first.' 
+                });
+            }
+            
+            // Create new room
+            const room = createRoom(socket.id);
+            
+            // Join the Socket.IO room
+            socket.join(room.code);
+            
+            // Add player to room
+            room.players.set(socket.id, {
+                socketId: socket.id,
+                isHost: true,
+                joinedAt: Date.now()
+            });
+            
+            // Store room code on socket for easy access
+            socket.roomCode = room.code;
+            
+            console.log(`Room ${room.code} created by ${socket.id}`);
+            
+            callback({ 
+                success: true, 
+                roomCode: room.code,
+                isHost: true,
+                playerCount: room.players.size,
+                maxPlayers: ROOM_CONFIG.MAX_PLAYERS
+            });
+            
+        } catch (error) {
+            console.error('Error creating room:', error);
+            callback({ 
+                success: false, 
+                error: 'Failed to create room. Please try again.' 
+            });
+        }
+    });
+    
+    // Handle room joining
+    socket.on('joinRoom', (data, callback) => {
+        try {
+            const { roomCode } = data;
+            
+            // Check if player is already in a room
+            const existingRoom = getRoomByPlayer(socket.id);
+            if (existingRoom) {
+                return callback({ 
+                    success: false, 
+                    error: 'Already in a room. Leave current room first.' 
+                });
+            }
+            
+            // Attempt to join room
+            const result = joinRoom(roomCode, socket.id, {
+                socketId: socket.id,
+                isHost: false,
+                joinedAt: Date.now()
+            });
+            
+            if (!result.success) {
+                return callback({ 
+                    success: false, 
+                    error: result.error 
+                });
+            }
+            
+            // Join the Socket.IO room
+            socket.join(result.room.code);
+            socket.roomCode = result.room.code;
+            
+            // Notify existing players in the room
+            socket.to(result.room.code).emit('playerJoinedRoom', {
+                socketId: socket.id,
+                playerCount: result.room.players.size,
+                maxPlayers: ROOM_CONFIG.MAX_PLAYERS
+            });
+            
+            console.log(`Player ${socket.id} joined room ${result.room.code}`);
+            
+            callback({ 
+                success: true, 
+                roomCode: result.room.code,
+                isHost: false,
+                playerCount: result.room.players.size,
+                maxPlayers: ROOM_CONFIG.MAX_PLAYERS,
+                hostId: result.room.hostId
+            });
+            
+        } catch (error) {
+            console.error('Error joining room:', error);
+            callback({ 
+                success: false, 
+                error: 'Failed to join room. Please try again.' 
+            });
+        }
+    });
+    
+    // Handle leaving room
+    socket.on('leaveRoom', (callback) => {
+        try {
+            const roomInfo = getRoomByPlayer(socket.id);
+            if (!roomInfo) {
+                return callback({ 
+                    success: false, 
+                    error: 'Not in any room' 
+                });
+            }
+            
+            // Leave the Socket.IO room
+            socket.leave(roomInfo.code);
+            delete socket.roomCode;
+            
+            // Remove from room data structure
+            const leftRoom = leaveRoom(socket.id);
+            
+            if (leftRoom) {
+                // Notify remaining players
+                socket.to(roomInfo.code).emit('playerLeftRoom', {
+                    socketId: socket.id,
+                    playerCount: leftRoom.players.size,
+                    maxPlayers: ROOM_CONFIG.MAX_PLAYERS,
+                    newHostId: leftRoom.hostId
+                });
+                
+                console.log(`Player ${socket.id} left room ${roomInfo.code}`);
+            }
+            
+            callback({ success: true });
+            
+        } catch (error) {
+            console.error('Error leaving room:', error);
+            callback({ 
+                success: false, 
+                error: 'Failed to leave room' 
+            });
+        }
+    });
+    
+    // Handle getting room info
+    socket.on('getRoomInfo', (callback) => {
+        try {
+            const roomInfo = getRoomByPlayer(socket.id);
+            if (!roomInfo) {
+                return callback({ 
+                    success: false, 
+                    error: 'Not in any room' 
+                });
+            }
+            
+            const playerList = Array.from(roomInfo.room.players.values());
+            
+            callback({ 
+                success: true, 
+                roomCode: roomInfo.code,
+                isHost: roomInfo.room.hostId === socket.id,
+                playerCount: roomInfo.room.players.size,
+                maxPlayers: ROOM_CONFIG.MAX_PLAYERS,
+                players: playerList,
+                hostId: roomInfo.room.hostId
+            });
+            
+        } catch (error) {
+            console.error('Error getting room info:', error);
+            callback({ 
+                success: false, 
+                error: 'Failed to get room info' 
+            });
+        }
+    });
+    
+    // ==================== END ROOM MANAGEMENT EVENT HANDLERS ====================
+    
+    // Handle game start (host only)
+    socket.on('startGame', (callback) => {
+        try {
+            const roomInfo = getRoomByPlayer(socket.id);
+            if (!roomInfo) {
+                return callback({ 
+                    success: false, 
+                    error: 'Not in any room' 
+                });
+            }
+            
+            // Check if player is host
+            if (roomInfo.room.hostId !== socket.id) {
+                return callback({ 
+                    success: false, 
+                    error: 'Only the host can start the game' 
+                });
+            }
+            
+            // Check minimum players (at least 2 for testing, can be adjusted)
+            if (roomInfo.room.players.size < 1) { // Allow 1 player for testing
+                return callback({ 
+                    success: false, 
+                    error: 'Need at least 1 player to start' 
+                });
+            }
+            
+            console.log(`Host ${socket.id} starting game in room ${roomInfo.code} with ${roomInfo.room.players.size} players`);
+            
+            // Start 3-second countdown for all players in the room
+            io.to(roomInfo.code).emit('gameStartCountdown', {
+                countdown: 3,
+                hostId: socket.id,
+                playerCount: roomInfo.room.players.size,
+                roomCode: roomInfo.code
+            });
+            
+            // Countdown sequence: 3, 2, 1, GO!
+            let countdownValue = 3;
+            const countdownInterval = setInterval(() => {
+                countdownValue--;
+                
+                if (countdownValue > 0) {
+                    // Send countdown number
+                    io.to(roomInfo.code).emit('gameStartCountdown', {
+                        countdown: countdownValue,
+                        hostId: socket.id,
+                        playerCount: roomInfo.room.players.size,
+                        roomCode: roomInfo.code
+                    });
+                } else {
+                    // Countdown finished - start the game!
+                    clearInterval(countdownInterval);
+                    
+                    // Hide room UI and start game for all players in room
+                    io.to(roomInfo.code).emit('gameStarted', {
+                        message: 'Fight!',
+                        hostId: socket.id,
+                        playerCount: roomInfo.room.players.size,
+                        roomCode: roomInfo.code,
+                        timestamp: Date.now()
+                    });
+                    
+                    // Update room activity
+                    updateRoomActivity(roomInfo.code);
+                    
+                    console.log(`Game started in room ${roomInfo.code}!`);
+                }
+            }, 1000); // 1 second intervals
+            
+            callback({ 
+                success: true, 
+                message: 'Game starting...' 
+            });
+            
+        } catch (error) {
+            console.error('Error starting game:', error);
+            callback({ 
+                success: false, 
+                error: 'Failed to start game' 
+            });
+        }
+    });
     
     socket.on('input', (inputs) => {
         const player = players[socket.id];
@@ -820,24 +1342,66 @@ io.on('connection', (socket) => {
     
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
+        
+        // Clean up room if player was in one
+        const roomInfo = getRoomByPlayer(socket.id);
+        if (roomInfo) {
+            // Leave the Socket.IO room
+            socket.leave(roomInfo.code);
+            
+            // Remove from room data structure
+            const leftRoom = leaveRoom(socket.id);
+            
+            if (leftRoom && leftRoom.players.size > 0) {
+                // Notify remaining players
+                socket.to(roomInfo.code).emit('playerLeftRoom', {
+                    socketId: socket.id,
+                    playerCount: leftRoom.players.size,
+                    maxPlayers: ROOM_CONFIG.MAX_PLAYERS,
+                    newHostId: leftRoom.hostId,
+                    reason: 'disconnect'
+                });
+                
+                console.log(`Player ${socket.id} disconnected from room ${roomInfo.code}`);
+            }
+        }
+        
+        // Remove player from global players object
         delete players[socket.id];
     });
 });
 
-// Game loop - 60 FPS
+// Game loop - 60 FPS (Room-scoped)
 setInterval(() => {
     updatePhysics();
     handleCombat();
     
-    // Enhanced game state with physics information
-    const gameState = {
-        players: players,
-        platforms: PLATFORMS, // Include platform data for client synchronization
-        serverTime: Date.now(),
-        tick: gameLoop.tick || 0
-    };
-    
-    io.emit('gameState', gameState);
+    // Send room-specific game states
+    for (const [roomCode, room] of rooms.entries()) {
+        if (room.isActive && room.players.size > 0) {
+            // Get only players in this room
+            const roomPlayers = {};
+            for (const playerSocketId of room.players.keys()) {
+                if (players[playerSocketId]) {
+                    roomPlayers[playerSocketId] = players[playerSocketId];
+                }
+            }
+            
+            // Create room-specific game state
+            const gameState = {
+                players: roomPlayers,
+                platforms: PLATFORMS, // Include platform data for client synchronization
+                serverTime: Date.now(),
+                tick: gameLoop.tick || 0,
+                roomCode: roomCode,
+                playerCount: room.players.size
+            };
+            
+            // Broadcast to this room only
+            io.to(roomCode).emit('gameState', gameState);
+            updateRoomActivity(roomCode);
+        }
+    }
     
     // Increment tick counter for debugging
     gameLoop.tick = (gameLoop.tick || 0) + 1;

@@ -190,68 +190,80 @@
       },
       {
         "id": 4,
-        "title": "Implement Combo System with Attack Chaining",
-        "description": "Add ability to chain attacks together with timing-based combos and stun effects",
-        "details": "Extend handleCombat() in server.js: track attack sequences with timestamps, detect combos based on timing windows (500ms between attacks). Add combo counter and damage multiplier (1.2x for 2-hit, 1.5x for 3-hit). Implement stun states: brief movement disable (200ms) after being hit to enable follow-ups. Client-side: show combo counter UI, attack animation sequences. Add knock-up effect for aerial combos using velocity.y = -200. Store combo state in player object with resetTimer.",
-        "testStrategy": "Test combo chains work with proper timing, damage multipliers apply correctly, stun prevents movement briefly. Verify combo resets after timeout or successful completion across multiple clients.",
-        "priority": "medium",
+        "title": "Implement Three Attack Types System (Heavy, Light, Range)",
+        "description": "Add three distinct attack types with different properties: heavy attacks for high damage with slow recovery, light attacks for quick strikes with lower damage, and ranged attacks that fire projectiles across the battlefield.",
+        "status": "pending",
         "dependencies": [
           3
         ],
-        "status": "pending",
+        "priority": "medium",
+        "details": "Extend handleCombat() to support three attack types triggered by different key combinations: Space (light attack), Shift+Space (heavy attack), Z+Space (range attack). Heavy attacks: 25 damage, 800ms cooldown, larger hit radius (100px), slight charge time. Light attacks: 10 damage, 300ms cooldown, standard radius (70px), instant. Range attacks: 15 damage, 1000ms cooldown, projectile physics with 400px/s velocity, despawn after 2 seconds or wall collision. Add attack type validation, damage scaling, and visual feedback for each type. Implement projectile system with collision detection against players and platforms.",
+        "testStrategy": "Test all three attack types work with proper key combinations, damage values and cooldowns are correct, projectiles spawn and move correctly with collision detection. Verify attack type validation prevents spam and visual feedback displays appropriately across multiple clients.",
         "subtasks": [
           {
             "id": 1,
-            "title": "Attack Sequence Tracking and Timing Windows",
-            "description": "Implement attack sequence tracking with timestamp-based timing windows to detect valid combo chains",
-            "dependencies": [],
-            "details": "Extend handleCombat() in server.js to track attack sequences with timestamps. Store attack history in player object with array of {timestamp, attackType} entries. Implement timing window validation (500ms between attacks) to determine valid combo chains. Add sequence reset logic when timing window expires or player is hit. Track combo state with resetTimer and cleanup expired sequences.",
+            "title": "Attack Type Input Handling and Key Combinations",
+            "description": "Implement input detection for three distinct attack types with different key combinations",
             "status": "pending",
+            "dependencies": [],
+            "details": "Add input handling for three attack types: Space (light attack), Shift+Space (heavy attack), Z+Space (range attack). Implement key combination detection in client-side input system. Add attack type validation to prevent conflicting inputs. Create attack type enumeration and state tracking in player object. Ensure proper input buffering and prevent input spam during cooldown periods.",
             "testStrategy": ""
           },
           {
             "id": 2,
-            "title": "Combo Detection Logic and Damage Multipliers",
-            "description": "Implement combo detection algorithms and progressive damage multiplier system",
+            "title": "Heavy Attack Implementation with Damage and Cooldown",
+            "description": "Implement heavy attack mechanics with high damage, slow recovery, and larger hit radius",
+            "status": "pending",
             "dependencies": [
               1
             ],
-            "details": "Add combo detection logic that analyzes attack sequences to identify valid combos. Implement damage multiplier system: 1.2x for 2-hit combos, 1.5x for 3-hit combos, scaling further for longer chains. Calculate final damage by applying multipliers to base attack damage. Store combo counter in player object and increment on successful chained attacks. Add combo validation to ensure attacks connect within timing windows.",
-            "status": "pending",
+            "details": "Implement heavy attack system: 25 damage, 800ms cooldown, larger hit radius (100px). Add slight charge time before attack execution to balance high damage. Implement cooldown tracking and validation to prevent spam. Add hit detection with expanded radius for heavy attacks. Create visual feedback for charge time and attack execution. Sync heavy attack state and effects across all clients.",
             "testStrategy": ""
           },
           {
             "id": 3,
-            "title": "Stun State Implementation and Movement Restrictions",
-            "description": "Implement stun mechanics with movement restrictions and recovery states",
-            "dependencies": [
-              2
-            ],
-            "details": "Add stun state to player object with duration tracking (200ms base stun). Implement movement restriction logic that disables player input during stun period. Add stun recovery system with gradual movement restoration. Implement knock-up effect for aerial combos using velocity.y = -200. Add stun resistance scaling to prevent infinite combos. Sync stun states across clients via Socket.IO.",
+            "title": "Light Attack Implementation with Fast Execution",
+            "description": "Implement light attack mechanics with quick strikes and lower damage",
             "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement light attack system: 10 damage, 300ms cooldown, standard radius (70px), instant execution. Add fast attack animation and immediate hit detection. Implement cooldown tracking for light attacks. Create responsive visual feedback for quick strikes. Ensure light attacks feel snappy and responsive with minimal delay. Sync light attack state across all clients with optimized network updates.",
             "testStrategy": ""
           },
           {
             "id": 4,
-            "title": "Client-Side UI and Animation Sequences",
-            "description": "Create visual feedback systems including combo counter UI and attack animation sequences",
-            "dependencies": [
-              2
-            ],
-            "details": "Implement combo counter UI display that shows current combo count and multiplier. Add attack animation sequences that chain smoothly for combo attacks. Create visual effects for successful combos including screen shake and particle effects. Implement damage number display with multiplier indicators. Add combo break notifications and reset animations. Use Phaser's animation system for smooth transitions between attack states.",
+            "title": "Projectile System and Physics Implementation",
+            "description": "Create projectile system with physics, collision detection, and lifecycle management",
             "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement projectile system for ranged attacks: 400px/s velocity, 2-second lifespan. Add projectile physics with trajectory calculation and movement. Implement collision detection against players and platforms. Add projectile spawning at player position with direction based on facing. Create projectile cleanup system for despawn after timeout or collision. Add visual projectile representation with trail effects.",
             "testStrategy": ""
           },
           {
             "id": 5,
-            "title": "Server-Side Validation and State Synchronization",
-            "description": "Implement authoritative server validation and real-time state synchronization for combo system",
+            "title": "Range Attack Implementation with Projectile Integration",
+            "description": "Implement ranged attack mechanics that spawn and manage projectiles",
+            "status": "pending",
             "dependencies": [
-              3,
               4
             ],
-            "details": "Add server-side validation for all combo actions to prevent cheating. Implement authoritative combo state management with client reconciliation. Add real-time synchronization of combo states, damage calculations, and stun effects across all clients. Implement lag compensation for combo timing validation. Add network optimization for frequent combo state updates. Ensure consistent game state across all connected players with proper error handling and rollback mechanisms.",
+            "details": "Implement range attack system: 15 damage, 1000ms cooldown, projectile-based damage. Integrate projectile spawning with range attack input. Add projectile-to-player collision detection and damage application. Implement cooldown tracking for ranged attacks. Add visual feedback for projectile firing and impact effects. Sync projectile state and collisions across all clients with authoritative server validation.",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Attack Type Validation and Visual Feedback System",
+            "description": "Implement server-side validation and comprehensive visual feedback for all attack types",
             "status": "pending",
+            "dependencies": [
+              2,
+              3,
+              5
+            ],
+            "details": "Add server-side validation for all attack types to prevent cheating and ensure proper cooldown enforcement. Implement comprehensive visual feedback system: attack animations, damage numbers, cooldown indicators, and type-specific effects. Add attack type indicators in UI to show which attacks are available. Create consistent visual language for each attack type with distinct colors and effects. Implement network synchronization for all visual feedback across clients.",
             "testStrategy": ""
           }
         ]
@@ -416,181 +428,240 @@
       },
       {
         "id": 8,
-        "title": "Implement Room/Lobby System for 8 Players",
-        "description": "Add lobby system using Socket.IO rooms to organize matches with up to 8 players per room",
-        "details": "Use Socket.IO rooms: socket.join(roomId) on connection. Add room selection UI: input field for room name or auto-join. Maintain separate players object per room in server.js using Map<roomId, players>. Modify all broadcasts to use io.to(roomId).emit() instead of io.emit(). Add room management: auto-start match when 2+ players, max 8 players per room. Implement room list display showing active rooms and player counts. Add leave room functionality and cleanup empty rooms.",
-        "testStrategy": "Test multiple rooms simultaneously, verify broadcasts only go to correct room, 8-player limit enforced. Test room cleanup when players disconnect.",
-        "priority": "medium",
+        "title": "Implement Jackbox-Style Session Code System",
+        "description": "Create a session-based room system using 4-letter room codes (like TRBX) for easy game joining, similar to Jackbox games, with automatic room management and player limits.",
+        "status": "pending",
         "dependencies": [
           7
         ],
-        "status": "pending",
+        "priority": "medium",
+        "details": "Implement 4-letter room code generation (e.g. TRBX, GAME, PLAY) using random letter combinations. Create room creation flow: host clicks \"Create Game\" → generates unique 4-letter code → room instance created on server. Add join flow: players enter room code → validate code exists → join room if space available (max 8 players). Store room instances in Redis/memory with room metadata: {code, hostId, players, createdAt, isActive}. Implement room lifecycle: auto-cleanup after 1 hour of inactivity, remove when empty for 5 minutes. Add room code validation, case-insensitive joining, and collision detection for duplicate codes. Create simple UI with large room code display for sharing and easy code input field for joining.",
+        "testStrategy": "Test room code generation for uniqueness, verify case-insensitive joining works, test 8-player limit enforcement. Test room cleanup timers and auto-removal of empty rooms. Verify broadcasts only go to correct room using session codes.",
         "subtasks": [
           {
             "id": 1,
-            "title": "Implement Socket.IO Room Management and Player Organization",
-            "description": "Set up Socket.IO room infrastructure with player organization using Map data structure for room-based player management",
-            "dependencies": [],
-            "details": "Modify server.js to use Map<roomId, players> instead of global players object. Implement socket.join(roomId) on connection. Add room-specific player tracking with methods for adding/removing players from rooms. Create room state management including player counts and room metadata. Implement room validation and player limit enforcement (max 8 players per room).",
+            "title": "Implement 4-Letter Room Code Generation and Validation System",
+            "description": "Create unique 4-letter room code generation with collision detection and validation logic",
             "status": "pending",
+            "dependencies": [],
+            "details": "Implement random 4-letter code generation using uppercase letters (A-Z) with collision detection to ensure uniqueness. Create code validation functions for case-insensitive input handling. Add room code storage system using Map<code, roomData> structure. Implement code expiration and cleanup logic. Create helper functions for code formatting and sanitization. Add room metadata structure: {code, hostId, players, createdAt, isActive, lastActivity}.",
             "testStrategy": ""
           },
           {
             "id": 2,
-            "title": "Create Room Selection UI and Auto-Join Functionality",
-            "description": "Build client-side interface for room selection with input field and auto-join capabilities",
+            "title": "Create Room Creation Flow with Host Management",
+            "description": "Build server-side room creation system with host assignment and room initialization",
+            "status": "pending",
             "dependencies": [
               1
             ],
-            "details": "Add room selection UI to client with input field for room name or auto-join button. Implement room list display showing active rooms and current player counts. Add join room functionality that communicates with server via Socket.IO. Create auto-join logic that places players in available rooms with space. Handle room full scenarios and provide user feedback.",
-            "status": "pending",
+            "details": "Implement \"Create Game\" endpoint that generates unique room code and creates room instance. Set up host assignment and privileges for room creator. Create room initialization with default settings and empty player list. Implement Socket.IO room joining for host using socket.join(roomCode). Add room state management and host migration logic if host disconnects. Create room creation response with generated code and room details.",
             "testStrategy": ""
           },
           {
             "id": 3,
-            "title": "Modify Broadcast System for Room-Specific Communication",
-            "description": "Update all Socket.IO broadcasts throughout the codebase to use room-specific communication instead of global broadcasts",
-            "dependencies": [
-              1
-            ],
-            "details": "Replace all io.emit() calls with io.to(roomId).emit() in server.js. Update game state broadcasts, player movement, combat events, and match events to be room-specific. Modify handleMovement, handleCombat, and other game functions to include roomId parameter. Ensure all client updates only reach players in the same room. Test broadcast isolation between different rooms.",
+            "title": "Implement Room Joining Flow with Code Validation",
+            "description": "Create player joining system with room code validation and capacity management",
             "status": "pending",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Build room joining endpoint that accepts 4-letter codes (case-insensitive). Implement room existence validation and capacity checking (max 8 players). Add player joining logic with Socket.IO room assignment using socket.join(roomCode). Create join response handling for success/failure scenarios. Implement player list updates and broadcast new player notifications to room. Add error handling for invalid codes, full rooms, and duplicate joins.",
             "testStrategy": ""
           },
           {
             "id": 4,
-            "title": "Implement Room Lifecycle Management and Cleanup",
-            "description": "Add comprehensive room lifecycle management including auto-start, cleanup, and player limit enforcement",
+            "title": "Create Session Code UI with Room Display and Input",
+            "description": "Build client-side interface for room code display and joining with large, shareable room codes",
+            "status": "pending",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Create \"Create Game\" button that triggers room creation and displays generated 4-letter code prominently. Design large, easily readable room code display for sharing with friends. Build room code input field with auto-uppercase formatting and 4-character limit. Add join button and validation feedback for invalid codes. Create room lobby UI showing current players and room code. Implement responsive design for mobile-friendly code sharing and joining.",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Implement Room Lifecycle Management and Auto-Cleanup",
+            "description": "Add comprehensive room lifecycle with activity tracking and automatic cleanup timers",
+            "status": "pending",
             "dependencies": [
               1,
               2,
               3
             ],
-            "details": "Implement auto-start match logic when 2+ players join a room. Add room cleanup functionality to remove empty rooms when all players disconnect. Create leave room functionality with proper player removal and room state updates. Implement player limit enforcement (max 8 players) with queue system if needed. Add room persistence and cleanup timers for abandoned rooms. Handle edge cases like host leaving and room migration.",
+            "details": "Implement room activity tracking with lastActivity timestamps. Create auto-cleanup system: remove rooms after 1 hour of inactivity, remove empty rooms after 5 minutes. Add room lifecycle events: room created, player joined/left, room destroyed. Implement cleanup timers using setTimeout/setInterval with proper cleanup on room destruction. Add room persistence logic and graceful shutdown handling. Create room statistics tracking for monitoring and debugging.",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Update Broadcast System for Session Code Rooms",
+            "description": "Modify all Socket.IO broadcasts to use session code-based room communication",
             "status": "pending",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "details": "Replace all io.emit() calls with io.to(roomCode).emit() throughout server.js. Update game state broadcasts, player movement, combat events to use room codes. Modify handleMovement, handleCombat functions to include roomCode parameter. Ensure all client updates only reach players in the same session code room. Test broadcast isolation between different session code rooms. Update player tracking to use room code as identifier.",
             "testStrategy": ""
           }
         ]
       },
       {
         "id": 9,
-        "title": "Add User Authentication System",
-        "description": "Implement basic user authentication to support player progression and persistent data",
-        "details": "Add JWT-based authentication: install jsonwebtoken npm package. Create login/register UI with username/password fields. Implement auth middleware in server.js to verify tokens on socket connection. Store user sessions in memory initially (upgrade to Redis later). Add socket authentication: verify JWT token in socket.io connection middleware. Create user object structure: {userId, username, socketId, roomId}. Handle authentication errors gracefully with reconnection logic.",
-        "testStrategy": "Test user registration/login flow, verify authenticated connections only, handle invalid tokens properly. Test session persistence across reconnections.",
-        "priority": "medium",
+        "title": "Implement Hybrid Authentication System (Guest + Optional Accounts)",
+        "description": "Create a hybrid authentication system supporting both anonymous guest play and optional user accounts, similar to Pokémon Showdown, with seamless switching between modes.",
+        "status": "pending",
         "dependencies": [
           8
         ],
-        "status": "pending",
+        "priority": "medium",
+        "details": "Implement dual authentication modes: Guest play (default) requires only display name entry, no login needed. Optional account system allows username+password registration for persistent stats. Guest players get temporary UUID with local storage persistence. Registered users get JWT tokens with secure session management. Implement identity protection: prevent guests from using registered usernames. Add \"Play as Guest\" and \"Login/Register\" options on room join. Support Firebase Auth for user authentication with anonymous and email/password providers. Create user object structure: {userId, username, isGuest, sessionToken, roomCode, displayName}. Add seamless account claiming: guests can register mid-session to save progress. Implement username validation and reservation system.",
+        "testStrategy": "Test guest play flow with display name only, verify registered user authentication, test identity protection prevents username conflicts. Test seamless account claiming mid-session, verify Firebase Auth integration works properly. Test session persistence for both guest and registered users.",
         "subtasks": [
           {
             "id": 1,
-            "title": "JWT Token Generation and Validation Setup",
-            "description": "Install jsonwebtoken package and implement JWT token generation for user authentication and validation middleware",
-            "dependencies": [],
-            "details": "Install jsonwebtoken npm package. Create JWT utility functions for token generation with user payload (userId, username). Implement token validation middleware with proper error handling for expired/invalid tokens. Set up JWT secret key configuration and token expiration settings (24h default). Create token refresh mechanism for seamless user experience.",
+            "title": "Firebase Auth Setup and Dual Provider Configuration",
+            "description": "Set up Firebase Authentication with anonymous and email/password providers for hybrid authentication system",
             "status": "pending",
+            "dependencies": [],
+            "details": "Install Firebase SDK and configure Firebase project with Authentication enabled. Set up anonymous authentication provider for guest users. Configure email/password authentication for registered accounts. Create Firebase config and initialization in client. Implement Firebase Auth state listeners to handle authentication changes. Set up proper security rules for anonymous vs authenticated users.",
             "testStrategy": ""
           },
           {
             "id": 2,
-            "title": "Login/Register UI and User Input Handling",
-            "description": "Create authentication forms with username/password fields and implement client-side input validation and submission",
-            "dependencies": [],
-            "details": "Design login/register UI forms with username and password input fields. Add client-side validation for username (min 3 chars, alphanumeric) and password (min 6 chars). Implement form submission handlers that send credentials to server endpoints. Add loading states and form feedback messages. Create toggle between login and register modes with smooth transitions.",
+            "title": "Guest Authentication Flow with Display Name Entry",
+            "description": "Implement guest play mode requiring only display name entry with UUID generation and local storage persistence",
             "status": "pending",
+            "dependencies": [],
+            "details": "Create guest authentication flow with display name input only (no password required). Generate temporary UUID for guest users using crypto.randomUUID(). Implement local storage persistence for guest sessions with display name and UUID. Add display name validation (3-20 chars, no special characters). Create guest user object with isGuest flag. Implement automatic guest login on return visits using stored UUID.",
             "testStrategy": ""
           },
           {
             "id": 3,
-            "title": "Socket.IO Authentication Middleware Implementation",
-            "description": "Implement authentication middleware for Socket.IO connections to verify JWT tokens on connection",
+            "title": "Registered User Authentication with JWT Tokens",
+            "description": "Implement traditional username/password registration and login with JWT token management for persistent accounts",
+            "status": "pending",
             "dependencies": [
               1
             ],
-            "details": "Create Socket.IO authentication middleware that intercepts connection attempts. Verify JWT tokens from client handshake auth headers. Extract user information from valid tokens and attach to socket object. Reject connections with invalid/missing tokens with appropriate error messages. Implement token-based socket identification for user session management.",
-            "status": "pending",
+            "details": "Create registration/login UI forms for username and password. Implement Firebase email/password authentication for registered users. Generate JWT tokens for authenticated users with user payload (userId, username, isGuest: false). Add token validation middleware for registered user sessions. Implement secure session management with token refresh. Create persistent user data storage for registered accounts.",
             "testStrategy": ""
           },
           {
             "id": 4,
-            "title": "Session Management and User Object Structure",
-            "description": "Implement in-memory session storage and define user object structure for authenticated players",
+            "title": "Identity Protection and Username Reservation System",
+            "description": "Implement system to prevent guests from using registered usernames and manage username reservations",
+            "status": "pending",
             "dependencies": [
+              2,
               3
             ],
-            "details": "Create user object structure: {userId, username, socketId, roomId, joinTime, isAuthenticated}. Implement in-memory session storage using Map for active users. Add session lifecycle management: create on login, update on room changes, cleanup on disconnect. Implement user lookup functions by userId and socketId. Add session persistence across socket reconnections using userId mapping.",
-            "status": "pending",
+            "details": "Create username reservation database/storage for registered accounts. Implement real-time username validation that checks against reserved names. Add display name conflict detection for guest users attempting to use registered usernames. Create username availability checker with instant feedback. Implement case-insensitive username comparison. Add suggested alternative names when conflicts occur.",
             "testStrategy": ""
           },
           {
             "id": 5,
-            "title": "Error Handling and Reconnection Logic",
-            "description": "Implement comprehensive error handling for authentication failures and automatic reconnection logic",
+            "title": "Hybrid User Object Structure and Session Management",
+            "description": "Implement unified user object structure supporting both guest and registered users with proper session handling",
+            "status": "pending",
             "dependencies": [
-              2,
               4
             ],
-            "details": "Add authentication error handling: invalid credentials, expired tokens, network failures. Implement client-side reconnection logic with exponential backoff (1s, 2s, 4s intervals). Handle token refresh on reconnection attempts. Add user feedback for authentication states: connecting, authenticated, failed, reconnecting. Implement graceful degradation when authentication service is unavailable.",
+            "details": "Create user object structure: {userId, username, isGuest, sessionToken, roomCode, displayName, createdAt, lastActive}. Implement session management for both guest (UUID-based) and registered (JWT-based) users. Add user lookup functions supporting both authentication types. Implement session cleanup and expiration handling. Create user state synchronization across socket connections.",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Room Join UI with Authentication Mode Selection",
+            "description": "Create room join interface with options for guest play or registered user login/registration",
             "status": "pending",
+            "dependencies": [
+              5
+            ],
+            "details": "Design room join UI with two clear paths: \"Play as Guest\" and \"Login/Register\". Create smooth transitions between authentication modes. Add room code input field that works for both user types. Implement authentication mode persistence (remember user preference). Create loading states for both authentication flows. Add clear visual distinction between guest and registered user sessions.",
+            "testStrategy": ""
+          },
+          {
+            "id": 7,
+            "title": "Seamless Account Claiming and Mid-Session Registration",
+            "description": "Implement ability for guests to register mid-session to claim their progress and convert to registered accounts",
+            "status": "pending",
+            "dependencies": [
+              6
+            ],
+            "details": "Add \"Claim Account\" option for active guest users during gameplay. Implement mid-session registration flow that preserves current game state and progress. Create account claiming UI that appears as overlay without disrupting gameplay. Transfer guest progress and stats to new registered account. Implement seamless transition from guest to registered user without disconnection. Add confirmation flow for successful account claiming.",
             "testStrategy": ""
           }
         ]
       },
       {
         "id": 10,
-        "title": "Setup MongoDB Database for Player Progression",
-        "description": "Integrate MongoDB database to store player stats, progression, and match history",
-        "details": "Install mongoose npm package, setup MongoDB Atlas free tier connection. Create user schema: {userId, username, level, xp, wins, losses, gamesPlayed, createdAt}. Create match schema: {matchId, roomId, players, winner, duration, endedAt}. Implement database operations: saveUser(), updateStats(), getPlayerStats(). Add connection handling with retry logic and error handling. Create indexes on userId and username for performance. Implement data validation and sanitization.",
-        "testStrategy": "Test database connection, user creation/updates work correctly, match data saves properly. Verify data persistence across server restarts and handle connection failures gracefully.",
-        "priority": "medium",
+        "title": "Setup Hybrid Firebase + VPS Architecture for User Data and Sessions",
+        "description": "Implement hybrid hosting architecture using Firebase for user authentication and persistent data storage, combined with VPS-hosted game server for real-time multiplayer performance.",
+        "status": "pending",
         "dependencies": [
           9
         ],
-        "status": "pending",
+        "priority": "medium",
+        "details": "Set up Firebase Firestore for user profiles, match history, and progression data. Use Firebase for authentication backend while VPS handles real-time game logic. Implement Firestore collections: users (profiles, stats, settings), matches (game results, player performance), rooms (session metadata, timestamps). Create VPS-to-Firebase data sync for match results and user statistics. Use Firebase for persistent data and VPS for real-time gameplay with Socket.IO. Implement offline-first data handling with Firestore offline persistence. Add Firebase Cloud Functions for data processing and aggregation. Create data migration utilities and backup systems. Optimize for Coolify deployment on VPS with Firebase SDK integration. Implement proper error handling and fallback mechanisms when Firebase is unavailable.",
+        "testStrategy": "Test Firebase Firestore connection and data operations, verify VPS-to-Firebase sync works correctly, test offline persistence and data recovery. Verify Firebase Cloud Functions execute properly and handle data aggregation. Test fallback mechanisms when Firebase is unavailable and ensure graceful degradation.",
         "subtasks": [
           {
             "id": 1,
-            "title": "MongoDB Connection and Schema Design",
-            "description": "Set up MongoDB Atlas connection and design database schemas for user and match data",
-            "dependencies": [],
-            "details": "Install mongoose npm package and configure MongoDB Atlas free tier connection. Create user schema with fields: userId, username, level, xp, wins, losses, gamesPlayed, createdAt. Create match schema with fields: matchId, roomId, players, winner, duration, endedAt. Set up proper data types, required fields, and default values for both schemas.",
+            "title": "Firebase Setup and Firestore Collections Design",
+            "description": "Set up Firebase project and design Firestore collections for user data, matches, and rooms",
             "status": "pending",
+            "dependencies": [],
+            "details": "Initialize Firebase project and configure Firestore database. Create collections structure: users (userId, username, level, xp, wins, losses, gamesPlayed, settings, createdAt), matches (matchId, roomId, players, winner, duration, endedAt, playerStats), rooms (roomId, sessionData, timestamps, metadata). Set up Firestore security rules and configure offline persistence. Install Firebase SDK and configure for VPS deployment with Coolify.",
             "testStrategy": ""
           },
           {
             "id": 2,
-            "title": "Database Operations and CRUD Functionality",
-            "description": "Implement core database operations for user and match data management",
+            "title": "VPS-to-Firebase Data Sync Implementation",
+            "description": "Implement real-time data synchronization between VPS game server and Firebase Firestore",
+            "status": "pending",
             "dependencies": [
               1
             ],
-            "details": "Create database operation functions: saveUser() for new user creation, updateStats() for player progression updates, getPlayerStats() for retrieving user data. Implement match data operations: saveMatch() for storing completed games, getMatchHistory() for retrieving player's past matches. Add proper error handling and data sanitization for all CRUD operations.",
-            "status": "pending",
+            "details": "Create Firebase service layer for VPS server to sync game data. Implement functions: syncUserStats() for player progression updates, saveMatchResult() for completed games, updateRoomMetadata() for session tracking. Set up batched writes for performance optimization and implement retry logic for failed syncs. Create data validation layer before Firebase writes and handle concurrent updates with transactions.",
             "testStrategy": ""
           },
           {
             "id": 3,
-            "title": "Connection Handling, Error Management, and Retry Logic",
-            "description": "Implement robust database connection management with error handling and retry mechanisms",
+            "title": "Firebase Cloud Functions and Data Processing",
+            "description": "Implement Firebase Cloud Functions for automated data processing and aggregation",
+            "status": "pending",
             "dependencies": [
               1
             ],
-            "details": "Set up connection retry logic with exponential backoff for MongoDB connection failures. Implement graceful error handling for database operations with proper logging. Add connection pooling configuration and timeout settings. Create health check functionality to monitor database connectivity and automatic reconnection on connection loss.",
-            "status": "pending",
+            "details": "Create Cloud Functions for: user statistics aggregation (calculating rankings, win rates), match data processing (performance analytics, historical trends), automated cleanup of old session data. Implement triggers for real-time data updates and scheduled functions for periodic maintenance. Add error handling and monitoring for Cloud Functions execution.",
             "testStrategy": ""
           },
           {
             "id": 4,
-            "title": "Data Validation, Indexing, and Performance Optimization",
-            "description": "Implement data validation, create database indexes, and optimize performance",
+            "title": "Offline Persistence and Error Handling",
+            "description": "Implement offline-first data handling with robust error handling and fallback mechanisms",
+            "status": "pending",
             "dependencies": [
               2,
               3
             ],
-            "details": "Add comprehensive data validation for user input and match data before database operations. Create indexes on userId and username fields for improved query performance. Implement query optimization techniques and add database performance monitoring. Set up data sanitization to prevent injection attacks and ensure data integrity.",
+            "details": "Configure Firestore offline persistence for client-side data caching. Implement fallback mechanisms when Firebase is unavailable: local data storage, queue pending operations, graceful degradation of features. Add comprehensive error handling for network failures, Firebase quota limits, and authentication issues. Create health monitoring for Firebase connectivity and automatic retry logic with exponential backoff.",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Data Migration and Backup Systems",
+            "description": "Create utilities for data migration, backup, and recovery operations",
             "status": "pending",
+            "dependencies": [
+              4
+            ],
+            "details": "Implement data migration utilities for moving existing data to Firebase Firestore. Create automated backup systems using Firebase Admin SDK to export data regularly. Develop data recovery procedures and validation tools to ensure data integrity. Add monitoring and alerting for backup operations and implement disaster recovery protocols.",
             "testStrategy": ""
           }
         ]
@@ -953,11 +1024,28 @@
             "testStrategy": ""
           }
         ]
+      },
+      {
+        "id": 16,
+        "title": "Integrate Sprites and Art Assets to Replace Basic Rectangles",
+        "description": "Replace current basic colored rectangles with proper fighter sprites, animations, and visual assets including character sprites, attack animations, visual effects, backgrounds, and UI elements.",
+        "details": "Create comprehensive art asset integration system: Set up asset loading pipeline in Phaser 3 using scene.load.spritesheet() for character animations and scene.load.image() for static assets. Replace basic rectangle rendering with sprite-based rendering for all game entities. Implement character sprite sheets with idle, walking, jumping, and falling animations using Phaser's animation system (scene.anims.create()). Create attack animation sequences for all three attack types (light, heavy, ranged) with proper timing and visual feedback. Add visual effects for combat: hit sparks, damage numbers, screen shake on heavy attacks. Design and implement background art layers with parallax scrolling for depth. Replace platform rectangles with themed platform sprites (stone, metal, wood variants). Create UI sprite assets for health bars, lives counter, ability cooldowns, and room codes display. Implement particle effects for item pickups, respawn sequences, and special abilities. Add character class visual differentiation through sprite variants and color schemes. Ensure all sprites are properly scaled and positioned to match existing collision boundaries. Implement sprite animation state management synchronized with game logic states.",
+        "testStrategy": "Verify all basic rectangles are replaced with appropriate sprites across all game states. Test character animations play correctly during movement, jumping, and combat actions. Confirm attack animations sync properly with damage dealing and cooldown timers. Test visual effects display correctly for all players simultaneously in multiplayer scenarios. Verify background and platform sprites render without performance issues. Test UI elements display correctly at different screen resolutions. Confirm sprite collision boundaries match existing gameplay mechanics. Test asset loading doesn't cause significant startup delays or memory issues.",
+        "status": "pending",
+        "dependencies": [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        "priority": "low",
+        "subtasks": []
       }
     ],
     "metadata": {
       "created": "2025-07-16T04:48:20.939Z",
-      "updated": "2025-07-19T00:56:08.082Z",
+      "updated": "2025-07-19T18:56:34.240Z",
       "description": "Tasks for master context"
     }
   }

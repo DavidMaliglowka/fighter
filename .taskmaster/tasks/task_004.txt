@@ -1,43 +1,49 @@
 # Task ID: 4
-# Title: Implement Combo System with Attack Chaining
+# Title: Implement Three Attack Types System (Heavy, Light, Range)
 # Status: pending
 # Dependencies: 3
 # Priority: medium
-# Description: Add ability to chain attacks together with timing-based combos and stun effects
+# Description: Add three distinct attack types with different properties: heavy attacks for high damage with slow recovery, light attacks for quick strikes with lower damage, and ranged attacks that fire projectiles across the battlefield.
 # Details:
-Extend handleCombat() in server.js: track attack sequences with timestamps, detect combos based on timing windows (500ms between attacks). Add combo counter and damage multiplier (1.2x for 2-hit, 1.5x for 3-hit). Implement stun states: brief movement disable (200ms) after being hit to enable follow-ups. Client-side: show combo counter UI, attack animation sequences. Add knock-up effect for aerial combos using velocity.y = -200. Store combo state in player object with resetTimer.
+Extend handleCombat() to support three attack types triggered by different key combinations: Space (light attack), Shift+Space (heavy attack), Z+Space (range attack). Heavy attacks: 25 damage, 800ms cooldown, larger hit radius (100px), slight charge time. Light attacks: 10 damage, 300ms cooldown, standard radius (70px), instant. Range attacks: 15 damage, 1000ms cooldown, projectile physics with 400px/s velocity, despawn after 2 seconds or wall collision. Add attack type validation, damage scaling, and visual feedback for each type. Implement projectile system with collision detection against players and platforms.
 
 # Test Strategy:
-Test combo chains work with proper timing, damage multipliers apply correctly, stun prevents movement briefly. Verify combo resets after timeout or successful completion across multiple clients.
+Test all three attack types work with proper key combinations, damage values and cooldowns are correct, projectiles spawn and move correctly with collision detection. Verify attack type validation prevents spam and visual feedback displays appropriately across multiple clients.
 
 # Subtasks:
-## 1. Attack Sequence Tracking and Timing Windows [pending]
+## 1. Attack Type Input Handling and Key Combinations [pending]
 ### Dependencies: None
-### Description: Implement attack sequence tracking with timestamp-based timing windows to detect valid combo chains
+### Description: Implement input detection for three distinct attack types with different key combinations
 ### Details:
-Extend handleCombat() in server.js to track attack sequences with timestamps. Store attack history in player object with array of {timestamp, attackType} entries. Implement timing window validation (500ms between attacks) to determine valid combo chains. Add sequence reset logic when timing window expires or player is hit. Track combo state with resetTimer and cleanup expired sequences.
+Add input handling for three attack types: Space (light attack), Shift+Space (heavy attack), Z+Space (range attack). Implement key combination detection in client-side input system. Add attack type validation to prevent conflicting inputs. Create attack type enumeration and state tracking in player object. Ensure proper input buffering and prevent input spam during cooldown periods.
 
-## 2. Combo Detection Logic and Damage Multipliers [pending]
+## 2. Heavy Attack Implementation with Damage and Cooldown [pending]
 ### Dependencies: 4.1
-### Description: Implement combo detection algorithms and progressive damage multiplier system
+### Description: Implement heavy attack mechanics with high damage, slow recovery, and larger hit radius
 ### Details:
-Add combo detection logic that analyzes attack sequences to identify valid combos. Implement damage multiplier system: 1.2x for 2-hit combos, 1.5x for 3-hit combos, scaling further for longer chains. Calculate final damage by applying multipliers to base attack damage. Store combo counter in player object and increment on successful chained attacks. Add combo validation to ensure attacks connect within timing windows.
+Implement heavy attack system: 25 damage, 800ms cooldown, larger hit radius (100px). Add slight charge time before attack execution to balance high damage. Implement cooldown tracking and validation to prevent spam. Add hit detection with expanded radius for heavy attacks. Create visual feedback for charge time and attack execution. Sync heavy attack state and effects across all clients.
 
-## 3. Stun State Implementation and Movement Restrictions [pending]
-### Dependencies: 4.2
-### Description: Implement stun mechanics with movement restrictions and recovery states
+## 3. Light Attack Implementation with Fast Execution [pending]
+### Dependencies: 4.1
+### Description: Implement light attack mechanics with quick strikes and lower damage
 ### Details:
-Add stun state to player object with duration tracking (200ms base stun). Implement movement restriction logic that disables player input during stun period. Add stun recovery system with gradual movement restoration. Implement knock-up effect for aerial combos using velocity.y = -200. Add stun resistance scaling to prevent infinite combos. Sync stun states across clients via Socket.IO.
+Implement light attack system: 10 damage, 300ms cooldown, standard radius (70px), instant execution. Add fast attack animation and immediate hit detection. Implement cooldown tracking for light attacks. Create responsive visual feedback for quick strikes. Ensure light attacks feel snappy and responsive with minimal delay. Sync light attack state across all clients with optimized network updates.
 
-## 4. Client-Side UI and Animation Sequences [pending]
-### Dependencies: 4.2
-### Description: Create visual feedback systems including combo counter UI and attack animation sequences
+## 4. Projectile System and Physics Implementation [pending]
+### Dependencies: 4.1
+### Description: Create projectile system with physics, collision detection, and lifecycle management
 ### Details:
-Implement combo counter UI display that shows current combo count and multiplier. Add attack animation sequences that chain smoothly for combo attacks. Create visual effects for successful combos including screen shake and particle effects. Implement damage number display with multiplier indicators. Add combo break notifications and reset animations. Use Phaser's animation system for smooth transitions between attack states.
+Implement projectile system for ranged attacks: 400px/s velocity, 2-second lifespan. Add projectile physics with trajectory calculation and movement. Implement collision detection against players and platforms. Add projectile spawning at player position with direction based on facing. Create projectile cleanup system for despawn after timeout or collision. Add visual projectile representation with trail effects.
 
-## 5. Server-Side Validation and State Synchronization [pending]
-### Dependencies: 4.3, 4.4
-### Description: Implement authoritative server validation and real-time state synchronization for combo system
+## 5. Range Attack Implementation with Projectile Integration [pending]
+### Dependencies: 4.4
+### Description: Implement ranged attack mechanics that spawn and manage projectiles
 ### Details:
-Add server-side validation for all combo actions to prevent cheating. Implement authoritative combo state management with client reconciliation. Add real-time synchronization of combo states, damage calculations, and stun effects across all clients. Implement lag compensation for combo timing validation. Add network optimization for frequent combo state updates. Ensure consistent game state across all connected players with proper error handling and rollback mechanisms.
+Implement range attack system: 15 damage, 1000ms cooldown, projectile-based damage. Integrate projectile spawning with range attack input. Add projectile-to-player collision detection and damage application. Implement cooldown tracking for ranged attacks. Add visual feedback for projectile firing and impact effects. Sync projectile state and collisions across all clients with authoritative server validation.
+
+## 6. Attack Type Validation and Visual Feedback System [pending]
+### Dependencies: 4.2, 4.3, 4.5
+### Description: Implement server-side validation and comprehensive visual feedback for all attack types
+### Details:
+Add server-side validation for all attack types to prevent cheating and ensure proper cooldown enforcement. Implement comprehensive visual feedback system: attack animations, damage numbers, cooldown indicators, and type-specific effects. Add attack type indicators in UI to show which attacks are available. Create consistent visual language for each attack type with distinct colors and effects. Implement network synchronization for all visual feedback across clients.
 

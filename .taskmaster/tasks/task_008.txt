@@ -1,37 +1,49 @@
 # Task ID: 8
-# Title: Implement Room/Lobby System for 8 Players
+# Title: Implement Jackbox-Style Session Code System
 # Status: pending
 # Dependencies: 7
 # Priority: medium
-# Description: Add lobby system using Socket.IO rooms to organize matches with up to 8 players per room
+# Description: Create a session-based room system using 4-letter room codes (like TRBX) for easy game joining, similar to Jackbox games, with automatic room management and player limits.
 # Details:
-Use Socket.IO rooms: socket.join(roomId) on connection. Add room selection UI: input field for room name or auto-join. Maintain separate players object per room in server.js using Map<roomId, players>. Modify all broadcasts to use io.to(roomId).emit() instead of io.emit(). Add room management: auto-start match when 2+ players, max 8 players per room. Implement room list display showing active rooms and player counts. Add leave room functionality and cleanup empty rooms.
+Implement 4-letter room code generation (e.g. TRBX, GAME, PLAY) using random letter combinations. Create room creation flow: host clicks "Create Game" → generates unique 4-letter code → room instance created on server. Add join flow: players enter room code → validate code exists → join room if space available (max 8 players). Store room instances in Redis/memory with room metadata: {code, hostId, players, createdAt, isActive}. Implement room lifecycle: auto-cleanup after 1 hour of inactivity, remove when empty for 5 minutes. Add room code validation, case-insensitive joining, and collision detection for duplicate codes. Create simple UI with large room code display for sharing and easy code input field for joining.
 
 # Test Strategy:
-Test multiple rooms simultaneously, verify broadcasts only go to correct room, 8-player limit enforced. Test room cleanup when players disconnect.
+Test room code generation for uniqueness, verify case-insensitive joining works, test 8-player limit enforcement. Test room cleanup timers and auto-removal of empty rooms. Verify broadcasts only go to correct room using session codes.
 
 # Subtasks:
-## 1. Implement Socket.IO Room Management and Player Organization [pending]
+## 1. Implement 4-Letter Room Code Generation and Validation System [pending]
 ### Dependencies: None
-### Description: Set up Socket.IO room infrastructure with player organization using Map data structure for room-based player management
+### Description: Create unique 4-letter room code generation with collision detection and validation logic
 ### Details:
-Modify server.js to use Map<roomId, players> instead of global players object. Implement socket.join(roomId) on connection. Add room-specific player tracking with methods for adding/removing players from rooms. Create room state management including player counts and room metadata. Implement room validation and player limit enforcement (max 8 players per room).
+Implement random 4-letter code generation using uppercase letters (A-Z) with collision detection to ensure uniqueness. Create code validation functions for case-insensitive input handling. Add room code storage system using Map<code, roomData> structure. Implement code expiration and cleanup logic. Create helper functions for code formatting and sanitization. Add room metadata structure: {code, hostId, players, createdAt, isActive, lastActivity}.
 
-## 2. Create Room Selection UI and Auto-Join Functionality [pending]
+## 2. Create Room Creation Flow with Host Management [pending]
 ### Dependencies: 8.1
-### Description: Build client-side interface for room selection with input field and auto-join capabilities
+### Description: Build server-side room creation system with host assignment and room initialization
 ### Details:
-Add room selection UI to client with input field for room name or auto-join button. Implement room list display showing active rooms and current player counts. Add join room functionality that communicates with server via Socket.IO. Create auto-join logic that places players in available rooms with space. Handle room full scenarios and provide user feedback.
+Implement "Create Game" endpoint that generates unique room code and creates room instance. Set up host assignment and privileges for room creator. Create room initialization with default settings and empty player list. Implement Socket.IO room joining for host using socket.join(roomCode). Add room state management and host migration logic if host disconnects. Create room creation response with generated code and room details.
 
-## 3. Modify Broadcast System for Room-Specific Communication [pending]
-### Dependencies: 8.1
-### Description: Update all Socket.IO broadcasts throughout the codebase to use room-specific communication instead of global broadcasts
+## 3. Implement Room Joining Flow with Code Validation [pending]
+### Dependencies: 8.1, 8.2
+### Description: Create player joining system with room code validation and capacity management
 ### Details:
-Replace all io.emit() calls with io.to(roomId).emit() in server.js. Update game state broadcasts, player movement, combat events, and match events to be room-specific. Modify handleMovement, handleCombat, and other game functions to include roomId parameter. Ensure all client updates only reach players in the same room. Test broadcast isolation between different rooms.
+Build room joining endpoint that accepts 4-letter codes (case-insensitive). Implement room existence validation and capacity checking (max 8 players). Add player joining logic with Socket.IO room assignment using socket.join(roomCode). Create join response handling for success/failure scenarios. Implement player list updates and broadcast new player notifications to room. Add error handling for invalid codes, full rooms, and duplicate joins.
 
-## 4. Implement Room Lifecycle Management and Cleanup [pending]
+## 4. Create Session Code UI with Room Display and Input [pending]
+### Dependencies: 8.2, 8.3
+### Description: Build client-side interface for room code display and joining with large, shareable room codes
+### Details:
+Create "Create Game" button that triggers room creation and displays generated 4-letter code prominently. Design large, easily readable room code display for sharing with friends. Build room code input field with auto-uppercase formatting and 4-character limit. Add join button and validation feedback for invalid codes. Create room lobby UI showing current players and room code. Implement responsive design for mobile-friendly code sharing and joining.
+
+## 5. Implement Room Lifecycle Management and Auto-Cleanup [pending]
 ### Dependencies: 8.1, 8.2, 8.3
-### Description: Add comprehensive room lifecycle management including auto-start, cleanup, and player limit enforcement
+### Description: Add comprehensive room lifecycle with activity tracking and automatic cleanup timers
 ### Details:
-Implement auto-start match logic when 2+ players join a room. Add room cleanup functionality to remove empty rooms when all players disconnect. Create leave room functionality with proper player removal and room state updates. Implement player limit enforcement (max 8 players) with queue system if needed. Add room persistence and cleanup timers for abandoned rooms. Handle edge cases like host leaving and room migration.
+Implement room activity tracking with lastActivity timestamps. Create auto-cleanup system: remove rooms after 1 hour of inactivity, remove empty rooms after 5 minutes. Add room lifecycle events: room created, player joined/left, room destroyed. Implement cleanup timers using setTimeout/setInterval with proper cleanup on room destruction. Add room persistence logic and graceful shutdown handling. Create room statistics tracking for monitoring and debugging.
+
+## 6. Update Broadcast System for Session Code Rooms [pending]
+### Dependencies: 8.1, 8.2, 8.3
+### Description: Modify all Socket.IO broadcasts to use session code-based room communication
+### Details:
+Replace all io.emit() calls with io.to(roomCode).emit() throughout server.js. Update game state broadcasts, player movement, combat events to use room codes. Modify handleMovement, handleCombat functions to include roomCode parameter. Ensure all client updates only reach players in the same session code room. Test broadcast isolation between different session code rooms. Update player tracking to use room code as identifier.
 

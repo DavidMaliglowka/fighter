@@ -1,43 +1,55 @@
 # Task ID: 9
-# Title: Add User Authentication System
+# Title: Implement Hybrid Authentication System (Guest + Optional Accounts)
 # Status: pending
 # Dependencies: 8
 # Priority: medium
-# Description: Implement basic user authentication to support player progression and persistent data
+# Description: Create a hybrid authentication system supporting both anonymous guest play and optional user accounts, similar to Pokémon Showdown, with seamless switching between modes.
 # Details:
-Add JWT-based authentication: install jsonwebtoken npm package. Create login/register UI with username/password fields. Implement auth middleware in server.js to verify tokens on socket connection. Store user sessions in memory initially (upgrade to Redis later). Add socket authentication: verify JWT token in socket.io connection middleware. Create user object structure: {userId, username, socketId, roomId}. Handle authentication errors gracefully with reconnection logic.
+Implement dual authentication modes: Guest play (default) requires only display name entry, no login needed. Optional account system allows username+password registration for persistent stats. Guest players get temporary UUID with local storage persistence. Registered users get JWT tokens with secure session management. Implement identity protection: prevent guests from using registered usernames. Add "Play as Guest" and "Login/Register" options on room join. Support Firebase Auth for user authentication with anonymous and email/password providers. Create user object structure: {userId, username, isGuest, sessionToken, roomCode, displayName}. Add seamless account claiming: guests can register mid-session to save progress. Implement username validation and reservation system.
 
 # Test Strategy:
-Test user registration/login flow, verify authenticated connections only, handle invalid tokens properly. Test session persistence across reconnections.
+Test guest play flow with display name only, verify registered user authentication, test identity protection prevents username conflicts. Test seamless account claiming mid-session, verify Firebase Auth integration works properly. Test session persistence for both guest and registered users.
 
 # Subtasks:
-## 1. JWT Token Generation and Validation Setup [pending]
+## 1. Firebase Auth Setup and Dual Provider Configuration [pending]
 ### Dependencies: None
-### Description: Install jsonwebtoken package and implement JWT token generation for user authentication and validation middleware
+### Description: Set up Firebase Authentication with anonymous and email/password providers for hybrid authentication system
 ### Details:
-Install jsonwebtoken npm package. Create JWT utility functions for token generation with user payload (userId, username). Implement token validation middleware with proper error handling for expired/invalid tokens. Set up JWT secret key configuration and token expiration settings (24h default). Create token refresh mechanism for seamless user experience.
+Install Firebase SDK and configure Firebase project with Authentication enabled. Set up anonymous authentication provider for guest users. Configure email/password authentication for registered accounts. Create Firebase config and initialization in client. Implement Firebase Auth state listeners to handle authentication changes. Set up proper security rules for anonymous vs authenticated users.
 
-## 2. Login/Register UI and User Input Handling [pending]
+## 2. Guest Authentication Flow with Display Name Entry [pending]
 ### Dependencies: None
-### Description: Create authentication forms with username/password fields and implement client-side input validation and submission
+### Description: Implement guest play mode requiring only display name entry with UUID generation and local storage persistence
 ### Details:
-Design login/register UI forms with username and password input fields. Add client-side validation for username (min 3 chars, alphanumeric) and password (min 6 chars). Implement form submission handlers that send credentials to server endpoints. Add loading states and form feedback messages. Create toggle between login and register modes with smooth transitions.
+Create guest authentication flow with display name input only (no password required). Generate temporary UUID for guest users using crypto.randomUUID(). Implement local storage persistence for guest sessions with display name and UUID. Add display name validation (3-20 chars, no special characters). Create guest user object with isGuest flag. Implement automatic guest login on return visits using stored UUID.
 
-## 3. Socket.IO Authentication Middleware Implementation [pending]
+## 3. Registered User Authentication with JWT Tokens [pending]
 ### Dependencies: 9.1
-### Description: Implement authentication middleware for Socket.IO connections to verify JWT tokens on connection
+### Description: Implement traditional username/password registration and login with JWT token management for persistent accounts
 ### Details:
-Create Socket.IO authentication middleware that intercepts connection attempts. Verify JWT tokens from client handshake auth headers. Extract user information from valid tokens and attach to socket object. Reject connections with invalid/missing tokens with appropriate error messages. Implement token-based socket identification for user session management.
+Create registration/login UI forms for username and password. Implement Firebase email/password authentication for registered users. Generate JWT tokens for authenticated users with user payload (userId, username, isGuest: false). Add token validation middleware for registered user sessions. Implement secure session management with token refresh. Create persistent user data storage for registered accounts.
 
-## 4. Session Management and User Object Structure [pending]
-### Dependencies: 9.3
-### Description: Implement in-memory session storage and define user object structure for authenticated players
+## 4. Identity Protection and Username Reservation System [pending]
+### Dependencies: 9.2, 9.3
+### Description: Implement system to prevent guests from using registered usernames and manage username reservations
 ### Details:
-Create user object structure: {userId, username, socketId, roomId, joinTime, isAuthenticated}. Implement in-memory session storage using Map for active users. Add session lifecycle management: create on login, update on room changes, cleanup on disconnect. Implement user lookup functions by userId and socketId. Add session persistence across socket reconnections using userId mapping.
+Create username reservation database/storage for registered accounts. Implement real-time username validation that checks against reserved names. Add display name conflict detection for guest users attempting to use registered usernames. Create username availability checker with instant feedback. Implement case-insensitive username comparison. Add suggested alternative names when conflicts occur.
 
-## 5. Error Handling and Reconnection Logic [pending]
-### Dependencies: 9.2, 9.4
-### Description: Implement comprehensive error handling for authentication failures and automatic reconnection logic
+## 5. Hybrid User Object Structure and Session Management [pending]
+### Dependencies: 9.4
+### Description: Implement unified user object structure supporting both guest and registered users with proper session handling
 ### Details:
-Add authentication error handling: invalid credentials, expired tokens, network failures. Implement client-side reconnection logic with exponential backoff (1s, 2s, 4s intervals). Handle token refresh on reconnection attempts. Add user feedback for authentication states: connecting, authenticated, failed, reconnecting. Implement graceful degradation when authentication service is unavailable.
+Create user object structure: {userId, username, isGuest, sessionToken, roomCode, displayName, createdAt, lastActive}. Implement session management for both guest (UUID-based) and registered (JWT-based) users. Add user lookup functions supporting both authentication types. Implement session cleanup and expiration handling. Create user state synchronization across socket connections.
+
+## 6. Room Join UI with Authentication Mode Selection [pending]
+### Dependencies: 9.5
+### Description: Create room join interface with options for guest play or registered user login/registration
+### Details:
+Design room join UI with two clear paths: "Play as Guest" and "Login/Register". Create smooth transitions between authentication modes. Add room code input field that works for both user types. Implement authentication mode persistence (remember user preference). Create loading states for both authentication flows. Add clear visual distinction between guest and registered user sessions.
+
+## 7. Seamless Account Claiming and Mid-Session Registration [pending]
+### Dependencies: 9.6
+### Description: Implement ability for guests to register mid-session to claim their progress and convert to registered accounts
+### Details:
+Add "Claim Account" option for active guest users during gameplay. Implement mid-session registration flow that preserves current game state and progress. Create account claiming UI that appears as overlay without disrupting gameplay. Transfer guest progress and stats to new registered account. Implement seamless transition from guest to registered user without disconnection. Add confirmation flow for successful account claiming.
 

@@ -1,37 +1,43 @@
 # Task ID: 10
-# Title: Setup MongoDB Database for Player Progression
+# Title: Setup Hybrid Firebase + VPS Architecture for User Data and Sessions
 # Status: pending
 # Dependencies: 9
 # Priority: medium
-# Description: Integrate MongoDB database to store player stats, progression, and match history
+# Description: Implement hybrid hosting architecture using Firebase for user authentication and persistent data storage, combined with VPS-hosted game server for real-time multiplayer performance.
 # Details:
-Install mongoose npm package, setup MongoDB Atlas free tier connection. Create user schema: {userId, username, level, xp, wins, losses, gamesPlayed, createdAt}. Create match schema: {matchId, roomId, players, winner, duration, endedAt}. Implement database operations: saveUser(), updateStats(), getPlayerStats(). Add connection handling with retry logic and error handling. Create indexes on userId and username for performance. Implement data validation and sanitization.
+Set up Firebase Firestore for user profiles, match history, and progression data. Use Firebase for authentication backend while VPS handles real-time game logic. Implement Firestore collections: users (profiles, stats, settings), matches (game results, player performance), rooms (session metadata, timestamps). Create VPS-to-Firebase data sync for match results and user statistics. Use Firebase for persistent data and VPS for real-time gameplay with Socket.IO. Implement offline-first data handling with Firestore offline persistence. Add Firebase Cloud Functions for data processing and aggregation. Create data migration utilities and backup systems. Optimize for Coolify deployment on VPS with Firebase SDK integration. Implement proper error handling and fallback mechanisms when Firebase is unavailable.
 
 # Test Strategy:
-Test database connection, user creation/updates work correctly, match data saves properly. Verify data persistence across server restarts and handle connection failures gracefully.
+Test Firebase Firestore connection and data operations, verify VPS-to-Firebase sync works correctly, test offline persistence and data recovery. Verify Firebase Cloud Functions execute properly and handle data aggregation. Test fallback mechanisms when Firebase is unavailable and ensure graceful degradation.
 
 # Subtasks:
-## 1. MongoDB Connection and Schema Design [pending]
+## 1. Firebase Setup and Firestore Collections Design [pending]
 ### Dependencies: None
-### Description: Set up MongoDB Atlas connection and design database schemas for user and match data
+### Description: Set up Firebase project and design Firestore collections for user data, matches, and rooms
 ### Details:
-Install mongoose npm package and configure MongoDB Atlas free tier connection. Create user schema with fields: userId, username, level, xp, wins, losses, gamesPlayed, createdAt. Create match schema with fields: matchId, roomId, players, winner, duration, endedAt. Set up proper data types, required fields, and default values for both schemas.
+Initialize Firebase project and configure Firestore database. Create collections structure: users (userId, username, level, xp, wins, losses, gamesPlayed, settings, createdAt), matches (matchId, roomId, players, winner, duration, endedAt, playerStats), rooms (roomId, sessionData, timestamps, metadata). Set up Firestore security rules and configure offline persistence. Install Firebase SDK and configure for VPS deployment with Coolify.
 
-## 2. Database Operations and CRUD Functionality [pending]
+## 2. VPS-to-Firebase Data Sync Implementation [pending]
 ### Dependencies: 10.1
-### Description: Implement core database operations for user and match data management
+### Description: Implement real-time data synchronization between VPS game server and Firebase Firestore
 ### Details:
-Create database operation functions: saveUser() for new user creation, updateStats() for player progression updates, getPlayerStats() for retrieving user data. Implement match data operations: saveMatch() for storing completed games, getMatchHistory() for retrieving player's past matches. Add proper error handling and data sanitization for all CRUD operations.
+Create Firebase service layer for VPS server to sync game data. Implement functions: syncUserStats() for player progression updates, saveMatchResult() for completed games, updateRoomMetadata() for session tracking. Set up batched writes for performance optimization and implement retry logic for failed syncs. Create data validation layer before Firebase writes and handle concurrent updates with transactions.
 
-## 3. Connection Handling, Error Management, and Retry Logic [pending]
+## 3. Firebase Cloud Functions and Data Processing [pending]
 ### Dependencies: 10.1
-### Description: Implement robust database connection management with error handling and retry mechanisms
+### Description: Implement Firebase Cloud Functions for automated data processing and aggregation
 ### Details:
-Set up connection retry logic with exponential backoff for MongoDB connection failures. Implement graceful error handling for database operations with proper logging. Add connection pooling configuration and timeout settings. Create health check functionality to monitor database connectivity and automatic reconnection on connection loss.
+Create Cloud Functions for: user statistics aggregation (calculating rankings, win rates), match data processing (performance analytics, historical trends), automated cleanup of old session data. Implement triggers for real-time data updates and scheduled functions for periodic maintenance. Add error handling and monitoring for Cloud Functions execution.
 
-## 4. Data Validation, Indexing, and Performance Optimization [pending]
+## 4. Offline Persistence and Error Handling [pending]
 ### Dependencies: 10.2, 10.3
-### Description: Implement data validation, create database indexes, and optimize performance
+### Description: Implement offline-first data handling with robust error handling and fallback mechanisms
 ### Details:
-Add comprehensive data validation for user input and match data before database operations. Create indexes on userId and username fields for improved query performance. Implement query optimization techniques and add database performance monitoring. Set up data sanitization to prevent injection attacks and ensure data integrity.
+Configure Firestore offline persistence for client-side data caching. Implement fallback mechanisms when Firebase is unavailable: local data storage, queue pending operations, graceful degradation of features. Add comprehensive error handling for network failures, Firebase quota limits, and authentication issues. Create health monitoring for Firebase connectivity and automatic retry logic with exponential backoff.
+
+## 5. Data Migration and Backup Systems [pending]
+### Dependencies: 10.4
+### Description: Create utilities for data migration, backup, and recovery operations
+### Details:
+Implement data migration utilities for moving existing data to Firebase Firestore. Create automated backup systems using Firebase Admin SDK to export data regularly. Develop data recovery procedures and validation tools to ensure data integrity. Add monitoring and alerting for backup operations and implement disaster recovery protocols.
 

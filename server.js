@@ -316,12 +316,28 @@ function checkPlayerDeath(player, playerId) {
     }
     
     if (isOutOfBounds) {
-        // Player has died - deduct a life
+        // Player has died - deduct a life and increment death counter
         player.lives--;
+        player.deaths++;
         player.isDead = true;
         player.deathTime = Date.now();
         
-        console.log(`Player ${playerId} died! Lives remaining: ${player.lives}`);
+        // Check if death should be attributed to another player (kill attribution)
+        const KILL_ATTRIBUTION_WINDOW = 5000; // 5 seconds
+        let killerMessage = '';
+        if (player.lastAttacker && 
+            player.lastAttackTime && 
+            (Date.now() - player.lastAttackTime) < KILL_ATTRIBUTION_WINDOW &&
+            players[player.lastAttacker] && 
+            !players[player.lastAttacker].eliminated) {
+            
+            // Give kill credit to the attacker
+            players[player.lastAttacker].kills++;
+            killerMessage = ` (killed by ${player.lastAttacker})`;
+            console.log(`${player.lastAttacker} gets a kill! Total kills: ${players[player.lastAttacker].kills}`);
+        }
+        
+        console.log(`Player ${playerId} died! Lives remaining: ${player.lives}, Total deaths: ${player.deaths}${killerMessage}`);
         
         // Check if player is eliminated (no lives left)
         if (player.lives <= 0) {
@@ -406,22 +422,38 @@ function checkMatchEnd() {
         
         console.log(`Match ended! Winner: ${winnerId || 'None (draw)'}`);
         
-        // Emit match end event to all rooms
-        emitToAllRooms('matchEnd', {
+        // Prepare final stats for all players
+        const playerStats = Object.keys(players).map(id => ({
+            playerId: id,
+            playerName: `Player ${id.substring(0, 8)}...`,
+            lives: players[id].lives,
+            eliminated: players[id].eliminated,
+            isWinner: id === winnerId,
+            kills: players[id].kills || 0,
+            deaths: players[id].deaths || 0,
+            // Calculate K/D ratio
+            kdr: players[id].deaths > 0 ? (players[id].kills / players[id].deaths).toFixed(2) : players[id].kills.toString()
+        }));
+        
+        // Sort by winner first, then by kills, then by lowest deaths
+        playerStats.sort((a, b) => {
+            if (a.isWinner !== b.isWinner) return b.isWinner - a.isWinner;
+            if (a.kills !== b.kills) return b.kills - a.kills;
+            return a.deaths - b.deaths;
+        });
+        
+        // Emit game over event to all rooms (not matchEnd to distinguish from old behavior)
+        emitToAllRooms('gameOver', {
             winnerId: winnerId,
-            finalStandings: Object.keys(players).map(id => ({
-                playerId: id,
-                lives: players[id].lives,
-                eliminated: players[id].eliminated,
-                isWinner: id === winnerId
-            })),
+            winnerName: winnerId ? `Player ${winnerId.substring(0, 8)}...` : 'No Winner',
+            playerStats: playerStats,
+            totalPlayers: playerStats.length,
             timestamp: Date.now()
         });
         
-        // Reset match after a delay (optional)
-        setTimeout(() => {
-            resetMatch();
-        }, 5000); // 5 second delay before reset
+        console.log('Game Over! Final Stats:', playerStats);
+        
+        // Don't auto-reset anymore - let players choose rematch or new lobby
     }
 }
 
@@ -454,6 +486,43 @@ function resetMatch() {
         message: 'New round starting!',
         timestamp: Date.now()
     });
+    
+    console.log('Match reset complete!');
+}
+
+// Helper function to reset a single player for a new game (used for rematch)
+function resetPlayerForNewGame(player, playerId) {
+    // Reset game state
+    player.lives = STARTING_LIVES;
+    player.isDead = false;
+    player.eliminated = false;
+    player.isInvincible = false;
+    player.health = player.maxHealth;
+    player.attacking = false;
+    player.attackProcessed = false;
+    player.blocking = false;
+    player.isDashing = false;
+    player.dashDirection = 0;
+    player.dashVelocity = 0;
+    
+    // Reset stats for new game
+    player.kills = 0;
+    player.deaths = 0;
+    player.lastAttacker = null;
+    player.lastAttackTime = 0;
+    
+    // Respawn at random spawn platform
+    const spawnPlatforms = PLATFORMS.filter(p => p.type === PLATFORM_TYPES.SPAWN);
+    const randomSpawnPlatform = spawnPlatforms[Math.floor(Math.random() * spawnPlatforms.length)];
+    player.x = randomSpawnPlatform.x;
+    player.y = PlatformUtils.getPlayerStandingY(randomSpawnPlatform);
+    player.velocityX = 0;
+    player.velocityY = 0;
+    player.isGrounded = true;
+    player.jumpsRemaining = 2;
+    player.droppingFromPlatform = null;
+    
+    console.log(`Player ${playerId} reset for new game - stats cleared, respawned at (${player.x}, ${player.y})`);
 }
 
 // Platform collision detection functions (now using PlatformUtils)
@@ -785,12 +854,31 @@ function validateInputs(inputs) {
     return true;
 }
 
+// Helper function to get all players currently in active rooms
+function getPlayersInActiveRooms() {
+    const activeRoomPlayers = new Set();
+    
+    for (const [roomCode, room] of rooms.entries()) {
+        if (room.isActive && room.players.size > 0) {
+            for (const playerSocketId of room.players.keys()) {
+                if (players[playerSocketId]) {
+                    activeRoomPlayers.add(playerSocketId);
+                }
+            }
+        }
+    }
+    
+    return activeRoomPlayers;
+}
+
 // Helper function to update physics
 function updatePhysics() {
     const deltaTime = 1 / FRAME_RATE;
+    const activeRoomPlayers = getPlayersInActiveRooms();
     
-    for (const playerId in players) {
+    for (const playerId of activeRoomPlayers) {
         const player = players[playerId];
+        if (!player) continue; // Safety check
         
         // Apply gravity
         player.velocityY += GRAVITY * deltaTime;
@@ -892,6 +980,67 @@ function updatePhysics() {
         });
         }
         
+        // Check for health-based death (when health reaches 0)
+        if (player.health <= 0 && !player.isDead && !player.eliminated) {
+            console.log(`Player ${playerId} died from health depletion!`);
+            
+            // Trigger death with the same logic as fall-off death
+            player.lives--;
+            player.deaths++;
+            player.isDead = true;
+            player.deathTime = Date.now();
+            
+            // Check if death should be attributed to another player (kill attribution)
+            const KILL_ATTRIBUTION_WINDOW = 5000; // 5 seconds
+            let killerMessage = '';
+            if (player.lastAttacker && 
+                player.lastAttackTime && 
+                (Date.now() - player.lastAttackTime) < KILL_ATTRIBUTION_WINDOW &&
+                players[player.lastAttacker] && 
+                !players[player.lastAttacker].eliminated) {
+                
+                // Give kill credit to the attacker
+                players[player.lastAttacker].kills++;
+                killerMessage = ` (killed by ${player.lastAttacker})`;
+                console.log(`${player.lastAttacker} gets a kill! Total kills: ${players[player.lastAttacker].kills}`);
+            }
+            
+            console.log(`Player ${playerId} died from combat! Lives remaining: ${player.lives}, Total deaths: ${player.deaths}${killerMessage}`);
+            
+            // Check if player is eliminated (no lives left)
+            if (player.lives <= 0) {
+                player.eliminated = true;
+                console.log(`Player ${playerId} eliminated!`);
+                
+                // Emit elimination event to room
+                emitToPlayerRoom(playerId, 'playerEliminated', {
+                    playerId: playerId,
+                    finalPosition: { x: player.x, y: player.y },
+                    timestamp: Date.now()
+                });
+                
+                // Check for match end
+                checkMatchEnd();
+            } else {
+                // Schedule respawn for combat death
+                setTimeout(() => {
+                    if (players[playerId] && !players[playerId].eliminated) {
+                        respawnPlayer(players[playerId], playerId);
+                    }
+                }, RESPAWN_DELAY);
+            }
+            
+            // Emit death event to room
+            emitToPlayerRoom(playerId, 'playerDeath', {
+                playerId: playerId,
+                livesRemaining: player.lives,
+                deathPosition: { x: player.x, y: player.y },
+                isEliminated: player.eliminated,
+                deathCause: 'combat',
+                timestamp: Date.now()
+            });
+        }
+        
         // Check for player death (fall-off boundaries)
         checkPlayerDeath(player, playerId);
         
@@ -911,15 +1060,22 @@ function updatePhysics() {
 
 // Helper function to handle combat
 function handleCombat() {
-    for (const attackerId in players) {
+    const activeRoomPlayers = getPlayersInActiveRooms();
+    
+    for (const attackerId of activeRoomPlayers) {
         const attacker = players[attackerId];
+        if (!attacker) continue; // Safety check
         
         if (attacker.attacking && !attacker.attackProcessed) {
-            // Check for hits against other players
-            for (const targetId in players) {
+            // Check for hits against other players in the same room
+            const attackerRoomInfo = getRoomByPlayer(attackerId);
+            if (!attackerRoomInfo) continue;
+            
+            for (const targetId of attackerRoomInfo.room.players.keys()) {
                 if (attackerId === targetId) continue;
                 
                 const target = players[targetId];
+                if (!target) continue; // Safety check
                 const distance = getDistance(attacker, target);
                 
                 if (distance <= ATTACK_RANGE && target.health > 0 && !target.isDead && !target.eliminated && !target.isInvincible) {
@@ -930,6 +1086,10 @@ function handleCombat() {
                     }
                     
                     target.health = Math.max(0, target.health - damage);
+                    
+                    // Track last attacker for kill attribution (5 second window)
+                    target.lastAttacker = attackerId;
+                    target.lastAttackTime = Date.now();
                     
                     // Interrupt dash if target was dashing when hit
                     if (target.isDashing) {
@@ -991,7 +1151,12 @@ io.on('connection', (socket) => {
         isInvincible: false,
         invincibilityEndTime: 0,
         deathTime: 0,
-        eliminated: false
+        eliminated: false,
+        // Stats tracking
+        kills: 0,
+        deaths: 0,
+        lastAttacker: null,
+        lastAttackTime: 0
     };
     
     // Send empty initial game state (players will get real state after joining a room)
@@ -1136,10 +1301,11 @@ io.on('connection', (socket) => {
                     socketId: socket.id,
                     playerCount: leftRoom.players.size,
                     maxPlayers: ROOM_CONFIG.MAX_PLAYERS,
-                    newHostId: leftRoom.hostId
+                    newHostId: leftRoom.hostId,
+                    reason: 'disconnect'
                 });
                 
-                console.log(`Player ${socket.id} left room ${roomInfo.code}`);
+                console.log(`Player ${socket.id} disconnected from room ${roomInfo.code}`);
             }
             
             callback({ success: true });
@@ -1267,6 +1433,135 @@ io.on('connection', (socket) => {
             callback({ 
                 success: false, 
                 error: 'Failed to start game' 
+            });
+        }
+    });
+    
+    // Handle rematch (host only)
+    socket.on('rematch', (callback) => {
+        try {
+            const roomInfo = getRoomByPlayer(socket.id);
+            if (!roomInfo) {
+                return callback({ 
+                    success: false, 
+                    error: 'Not in any room' 
+                });
+            }
+            
+            // Check if player is host
+            if (roomInfo.room.hostId !== socket.id) {
+                return callback({ 
+                    success: false, 
+                    error: 'Only the host can start a rematch' 
+                });
+            }
+            
+            console.log(`Host ${socket.id} starting rematch in room ${roomInfo.code}`);
+            
+            // Reset all players in the room for a new game
+            for (const playerSocketId of roomInfo.room.players.keys()) {
+                if (players[playerSocketId]) {
+                    resetPlayerForNewGame(players[playerSocketId], playerSocketId);
+                }
+            }
+            
+            // Notify all players in room that rematch is starting
+            io.to(roomInfo.code).emit('rematchStarting', {
+                hostId: socket.id,
+                playerCount: roomInfo.room.players.size,
+                roomCode: roomInfo.code,
+                message: 'Rematch starting...'
+            });
+            
+            // Start countdown just like normal game start
+            setTimeout(() => {
+                io.to(roomInfo.code).emit('gameStartCountdown', {
+                    countdown: 3,
+                    hostId: socket.id,
+                    playerCount: roomInfo.room.players.size,
+                    roomCode: roomInfo.code
+                });
+                
+                // Countdown sequence for rematch
+                let countdownValue = 3;
+                const countdownInterval = setInterval(() => {
+                    countdownValue--;
+                    
+                    if (countdownValue > 0) {
+                        io.to(roomInfo.code).emit('gameStartCountdown', {
+                            countdown: countdownValue,
+                            hostId: socket.id,
+                            playerCount: roomInfo.room.players.size,
+                            roomCode: roomInfo.code
+                        });
+                    } else {
+                        clearInterval(countdownInterval);
+                        
+                        io.to(roomInfo.code).emit('gameStarted', {
+                            message: 'Round 2, Fight!',
+                            hostId: socket.id,
+                            playerCount: roomInfo.room.players.size,
+                            roomCode: roomInfo.code,
+                            timestamp: Date.now()
+                        });
+                        
+                        updateRoomActivity(roomInfo.code);
+                        console.log(`Rematch started in room ${roomInfo.code}!`);
+                    }
+                }, 1000);
+            }, 1000); // 1 second delay before countdown starts
+            
+            callback({ 
+                success: true, 
+                message: 'Rematch starting...' 
+            });
+            
+        } catch (error) {
+            console.error('Error starting rematch:', error);
+            callback({ 
+                success: false, 
+                error: 'Failed to start rematch' 
+            });
+        }
+    });
+    
+    // Handle return to lobby (any player can do this)
+    socket.on('returnToLobby', (callback) => {
+        try {
+            const roomInfo = getRoomByPlayer(socket.id);
+            if (!roomInfo) {
+                return callback({ 
+                    success: false, 
+                    error: 'Not in any room' 
+                });
+            }
+            
+            console.log(`Player ${socket.id} returning to lobby in room ${roomInfo.code}`);
+            
+            // Reset the player's game state but keep them in the room
+            if (players[socket.id]) {
+                resetPlayerForNewGame(players[socket.id], socket.id);
+            }
+            
+            // Notify just this player to return to lobby
+            socket.emit('returnedToLobby', {
+                roomCode: roomInfo.code,
+                isHost: roomInfo.room.hostId === socket.id,
+                playerCount: roomInfo.room.players.size,
+                maxPlayers: ROOM_CONFIG.MAX_PLAYERS,
+                message: 'Returned to lobby'
+            });
+            
+            callback({ 
+                success: true, 
+                message: 'Returned to lobby' 
+            });
+            
+        } catch (error) {
+            console.error('Error returning to lobby:', error);
+            callback({ 
+                success: false, 
+                error: 'Failed to return to lobby' 
             });
         }
     });

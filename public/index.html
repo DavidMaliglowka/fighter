@@ -85,6 +85,116 @@
             to { transform: translate(-50%, -50%) scale(1.05); }
         }
         
+        /* Game Over Screen */
+        #game-over-screen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.95);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            display: none;
+            z-index: 3500;
+            border: 3px solid #4CAF50;
+            box-shadow: 0 0 40px rgba(76, 175, 80, 0.4);
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        #game-over-screen h1 {
+            text-align: center;
+            color: #4CAF50;
+            margin-bottom: 10px;
+            font-size: 36px;
+        }
+        
+        #game-over-screen .winner-text {
+            text-align: center;
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #FFD700;
+        }
+        
+        #game-over-screen .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        #game-over-screen .stats-table th,
+        #game-over-screen .stats-table td {
+            padding: 12px 15px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        #game-over-screen .stats-table th {
+            background: rgba(76, 175, 80, 0.3);
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        #game-over-screen .stats-table tr.winner {
+            background: rgba(255, 215, 0, 0.2);
+            border-left: 4px solid #FFD700;
+        }
+        
+        #game-over-screen .stats-table tr.current-player {
+            background: rgba(76, 175, 80, 0.2);
+            border-left: 4px solid #4CAF50;
+        }
+        
+        #game-over-screen .game-over-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        #game-over-screen .game-over-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 120px;
+        }
+        
+        #game-over-screen .rematch-btn {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        #game-over-screen .rematch-btn:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+        }
+        
+        #game-over-screen .lobby-btn {
+            background: #2196F3;
+            color: white;
+        }
+        
+        #game-over-screen .lobby-btn:hover {
+            background: #1976D2;
+            transform: translateY(-2px);
+        }
+        
+        #game-over-screen .rematch-btn:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
         /* Room Management UI Styles */
         #room-ui {
             position: absolute;
@@ -288,6 +398,32 @@
         <div class="countdown-number">3</div>
     </div>
     
+    <!-- Game Over Screen -->
+    <div id="game-over-screen">
+        <h1>🏆 Game Over! 🏆</h1>
+        <div class="winner-text" id="winner-text">Winner: Player ABC...</div>
+        
+        <table class="stats-table" id="stats-table">
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Player</th>
+                    <th>Kills</th>
+                    <th>Deaths</th>
+                    <th>K/D</th>
+                </tr>
+            </thead>
+            <tbody id="stats-tbody">
+                <!-- Stats will be populated here -->
+            </tbody>
+        </table>
+        
+        <div class="game-over-buttons">
+            <button id="rematch-btn" class="game-over-btn rematch-btn">Rematch</button>
+            <button id="return-lobby-btn" class="game-over-btn lobby-btn">Return to Lobby</button>
+        </div>
+    </div>
+    
     <div id="controls">
         <div>Controls:</div>
         <div>Left/Right: Move</div>
@@ -383,9 +519,17 @@
         const roomCodeDisplay = document.getElementById('room-code-display');
         const playerList = document.getElementById('player-list');
         const playerCount = document.getElementById('room-player-count');
-        const startGameBtn = document.getElementById('start-game-btn');
         const leaveRoomBtn = document.getElementById('leave-room-btn');
+        const startGameBtn = document.getElementById('start-game-btn');
         const roomMessages = document.getElementById('room-messages');
+        
+        // Game Over UI Elements
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const winnerText = document.getElementById('winner-text');
+        const statsTable = document.getElementById('stats-table');
+        const statsTbody = document.getElementById('stats-tbody');
+        const rematchBtn = document.getElementById('rematch-btn');
+        const returnLobbyBtn = document.getElementById('return-lobby-btn');
         
         // Room management functions
         function showMessage(message, type = 'info') {
@@ -572,6 +716,10 @@
             joinRoomBtn.addEventListener('click', joinRoom);
             leaveRoomBtn.addEventListener('click', leaveRoom);
             startGameBtn.addEventListener('click', startGame);
+            
+            // Game Over button event listeners
+            rematchBtn.addEventListener('click', handleRematch);
+            returnLobbyBtn.addEventListener('click', handleReturnToLobby);
             
             // Handle Enter key in room code input
             roomCodeInput.addEventListener('keypress', (e) => {
@@ -848,6 +996,37 @@
             });
             
             // ==================== END GAME START EVENT HANDLERS ====================
+            
+            // ==================== GAME OVER EVENT HANDLERS ====================
+            
+            // Listen for game over event
+            socket.on('gameOver', (gameOverData) => {
+                console.log('Game Over received:', gameOverData);
+                showGameOverScreen(gameOverData);
+            });
+            
+            // Listen for rematch starting
+            socket.on('rematchStarting', (event) => {
+                console.log('Rematch starting:', event);
+                hideGameOverScreen();
+                
+                // Reset the rematch button
+                rematchBtn.disabled = false;
+                rematchBtn.textContent = 'Rematch';
+                
+                showMessage('Rematch starting!', 'success');
+            });
+            
+            // Listen for return to lobby response
+            socket.on('returnedToLobby', (event) => {
+                console.log('Returned to lobby:', event);
+                hideGameOverScreen();
+                showRoomLobby(event.roomCode, event.isHost);
+                currentRoom = event.roomCode;
+                isHost = event.isHost;
+            });
+            
+            // ==================== END GAME OVER EVENT HANDLERS ====================
             
             // ==================== END ROOM EVENT HANDLERS ====================
         }
@@ -1880,6 +2059,86 @@
                     ease: 'Power1'
                 });
             }
+        }
+        
+        // Game Over Functions
+        function showGameOverScreen(gameOverData) {
+            console.log('Showing game over screen:', gameOverData);
+            
+            // Update winner text
+            winnerText.textContent = gameOverData.winnerId ? 
+                `🏆 Winner: ${gameOverData.winnerName}` : 
+                '🤝 Draw - No Winner';
+            
+            // Clear and populate stats table
+            statsTbody.innerHTML = '';
+            
+            gameOverData.playerStats.forEach((player, index) => {
+                const row = document.createElement('tr');
+                
+                // Add special classes for winner and current player
+                if (player.isWinner) {
+                    row.classList.add('winner');
+                }
+                if (player.playerId === socket.id) {
+                    row.classList.add('current-player');
+                }
+                
+                row.innerHTML = `
+                    <td>#${index + 1}</td>
+                    <td>${player.playerName}${player.playerId === socket.id ? ' (You)' : ''}</td>
+                    <td>${player.kills}</td>
+                    <td>${player.deaths}</td>
+                    <td>${player.kdr}</td>
+                `;
+                
+                statsTbody.appendChild(row);
+            });
+            
+            // Show/hide rematch button based on host status
+            rematchBtn.style.display = isHost ? 'block' : 'none';
+            
+            // Show the game over screen
+            gameOverScreen.style.display = 'block';
+        }
+        
+        function hideGameOverScreen() {
+            gameOverScreen.style.display = 'none';
+        }
+        
+        function handleRematch() {
+            if (!isHost) {
+                showMessage('Only the host can start a rematch', 'error');
+                return;
+            }
+            
+            // Disable button to prevent multiple clicks
+            rematchBtn.disabled = true;
+            rematchBtn.textContent = 'Starting Rematch...';
+            
+            socket.emit('rematch', (response) => {
+                if (response.success) {
+                    hideGameOverScreen();
+                    showMessage('Rematch starting!', 'success');
+                } else {
+                    showMessage(response.error, 'error');
+                    // Re-enable button on error
+                    rematchBtn.disabled = false;
+                    rematchBtn.textContent = 'Rematch';
+                }
+            });
+        }
+        
+        function handleReturnToLobby() {
+            socket.emit('returnToLobby', (response) => {
+                if (response.success) {
+                    hideGameOverScreen();
+                    showRoomLobby(currentRoom, isHost);
+                    showMessage('Returned to lobby', 'success');
+                } else {
+                    showMessage(response.error, 'error');
+                }
+            });
         }
     </script>
 </body>

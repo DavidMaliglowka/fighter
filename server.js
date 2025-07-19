@@ -1593,13 +1593,26 @@ io.on('connection', (socket) => {
                 resetPlayerForNewGame(players[socket.id], socket.id);
             }
             
-            // Notify just this player to return to lobby
+            // Notify just this player to return to lobby and show room modal
             socket.emit('returnedToLobby', {
                 roomCode: roomInfo.code,
                 isHost: roomInfo.room.hostId === socket.id,
                 playerCount: roomInfo.room.players.size,
                 maxPlayers: ROOM_CONFIG.MAX_PLAYERS,
                 message: 'Returned to lobby'
+            });
+            
+            // Also emit roomJoined to trigger the room modal display
+            socket.emit('roomJoined', {
+                roomCode: roomInfo.code,
+                isHost: roomInfo.room.hostId === socket.id,
+                playerCount: roomInfo.room.players.size,
+                maxPlayers: ROOM_CONFIG.MAX_PLAYERS,
+                players: Array.from(roomInfo.room.players.values()).map(p => ({
+                    id: p.id,
+                    name: `Player ${p.id.substring(0, 8)}...`,
+                    isHost: p.id === roomInfo.room.hostId
+                }))
             });
             
             callback({ 

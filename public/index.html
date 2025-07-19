@@ -232,6 +232,7 @@
             border: 1px solid #333;
             border-radius: 10px;
             background: rgba(255, 255, 255, 0.05);
+            text-align: center;
         }
         
         .room-button {
@@ -245,6 +246,7 @@
             margin: 10px;
             transition: all 0.3s;
             box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            display: inline-block;
         }
         
         .room-button:hover {
@@ -951,6 +953,9 @@
                 const countdownEl = document.getElementById('game-start-countdown');
                 const countdownNumberEl = countdownEl.querySelector('.countdown-number');
                 
+                // Hide room UI during countdown
+                roomUI.style.display = 'none';
+                
                 // Show countdown with current number
                 countdownNumberEl.textContent = event.countdown;
                 countdownEl.style.display = 'block';
@@ -1021,9 +1026,26 @@
             socket.on('returnedToLobby', (event) => {
                 console.log('Returned to lobby:', event);
                 hideGameOverScreen();
+                // Show room UI again
+                roomUI.style.display = 'block';
                 showRoomLobby(event.roomCode, event.isHost);
-                currentRoom = event.roomCode;
+                currentRoom = { code: event.roomCode };
                 isHost = event.isHost;
+            });
+            
+            // Listen for room joined event (also triggered on return to lobby)
+            socket.on('roomJoined', (event) => {
+                console.log('Room joined/rejoined:', event);
+                // Show room UI if not already visible
+                roomUI.style.display = 'block';
+                showRoomLobby(event.roomCode, event.isHost);
+                currentRoom = { code: event.roomCode };
+                isHost = event.isHost;
+                
+                // Update player list if provided
+                if (event.players) {
+                    updatePlayerList(event.players);
+                }
             });
             
             // ==================== END GAME OVER EVENT HANDLERS ====================
@@ -2133,7 +2155,9 @@
             socket.emit('returnToLobby', (response) => {
                 if (response.success) {
                     hideGameOverScreen();
-                    showRoomLobby(currentRoom, isHost);
+                    // Show room UI again
+                    roomUI.style.display = 'block';
+                    showRoomLobby(currentRoom.code, isHost);
                     showMessage('Returned to lobby', 'success');
                 } else {
                     showMessage(response.error, 'error');

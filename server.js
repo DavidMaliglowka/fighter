@@ -230,15 +230,26 @@ function validateDash(player, currentTime) {
     // Prevent dash while already dashing
     if (player.isDashing) return false;
     
+    // Prevent dash during other actions that should block it
+    if (player.attacking || player.blocking) return false;
+    
     // Anti-cheat: Validate player position (prevent teleport exploits)
     if (player.y < 0 || player.y > 600) return false;
     if (player.x < 25 || player.x > 775) return false;
+    
+    // Check if player is in a valid state to dash (not falling too fast)
+    if (Math.abs(player.velocityY) > 1000) return false; // Prevent dash during excessive fall
     
     // Rate limiting: max 5 dashes per second per player
     if (!player.dashHistory) player.dashHistory = [];
     const oneSecondAgo = currentTime - 1000;
     player.dashHistory = player.dashHistory.filter(time => time > oneSecondAgo);
     if (player.dashHistory.length >= 5) return false;
+    
+    // Burst protection: prevent more than 2 dashes in 200ms (prevents macro abuse)
+    const twoHundredMsAgo = currentTime - 200;
+    const recentDashes = player.dashHistory.filter(time => time > twoHundredMsAgo);
+    if (recentDashes.length >= 2) return false;
     
     return true;
 }
@@ -273,6 +284,54 @@ function performDash(player, direction, currentTime, socket) {
     io.emit('playerDash', dashEvent);
     
     console.log(`Player ${socket.id} dashed ${direction} with velocity ${player.dashVelocity}`);
+}
+
+// Interrupt dash due to external factors (damage, collision, etc.)
+function interruptDash(player, reason = 'unknown') {
+    if (!player.isDashing) return false;
+    
+    player.isDashing = false;
+    player.dashDirection = 0;
+    player.dashVelocity = 0;
+    
+    console.log(`Player dash interrupted: ${reason}`);
+    
+    // Broadcast dash interruption to clients for visual cleanup
+    const interruptEvent = {
+        playerId: player.id || 'unknown',
+        reason: reason,
+        position: { x: player.x, y: player.y },
+        timestamp: Date.now()
+    };
+    
+    io.emit('dashInterrupted', interruptEvent);
+    return true;
+}
+
+// Enhanced player state validation and correction
+function validatePlayerDashState(player) {
+    // Ensure dash state consistency
+    if (player.isDashing) {
+        const currentTime = Date.now();
+        const dashElapsed = currentTime - player.dashStartTime;
+        
+        // Auto-cleanup stale dash states (safety net)
+        if (dashElapsed > DASH_DURATION * 2) {
+            console.log(`Warning: Stale dash state detected for player, auto-cleaning`);
+            interruptDash(player, 'stale_state');
+        }
+        
+        // Validate dash direction consistency
+        if (player.dashDirection === 0 && player.isDashing) {
+            console.log(`Warning: Invalid dash direction detected, interrupting`);
+            interruptDash(player, 'invalid_direction');
+        }
+    }
+    
+    // Ensure velocity consistency with dash state
+    if (!player.isDashing && Math.abs(player.dashVelocity) > 0) {
+        player.dashVelocity = 0; // Clean up orphaned dash velocity
+    }
 }
 
 // Input validation for network edge cases
@@ -399,6 +458,9 @@ function updatePhysics() {
             }
         }
         
+        // Validate and clean up dash state consistency
+        validatePlayerDashState(player);
+        
         // Cleanup old jump history to prevent memory leaks
         if (player.jumpHistory) {
             const fiveSecondsAgo = Date.now() - 5000;
@@ -434,6 +496,11 @@ function handleCombat() {
                     }
                     
                     target.health = Math.max(0, target.health - damage);
+                    
+                    // Interrupt dash if target was dashing when hit
+                    if (target.isDashing) {
+                        interruptDash(target, 'damaged');
+                    }
                     
                     // Knockback effect
                     const knockbackDistance = 20;

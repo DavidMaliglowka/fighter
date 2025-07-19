@@ -883,6 +883,32 @@
             
             console.log(`Dash visual effect for player ${dashEvent.playerId} direction ${dashEvent.direction}`);
         }
+        
+        function handleDashInterruption(interruptEvent) {
+            // Handle dash interruption for visual effects cleanup
+            const playerSprite = playerSprites[interruptEvent.playerId];
+            if (!playerSprite) return;
+            
+            // Clean up any active dash visual effects
+            this.children.getChildren().forEach(child => {
+                if (child.name && (child.name.includes('dashTrail') || child.name.includes('speedLine'))) {
+                    child.destroy();
+                }
+            });
+            
+            // Visual feedback for dash interruption (brief flash effect)
+            if (playerSprite) {
+                this.tweens.add({
+                    targets: playerSprite,
+                    alpha: 0.5,
+                    duration: 100,
+                    yoyo: true,
+                    ease: 'Power2'
+                });
+            }
+            
+            console.log(`Dash interrupted for player ${interruptEvent.playerId}: ${interruptEvent.reason}`);
+        }
     </script>
 </body>
 </html> 

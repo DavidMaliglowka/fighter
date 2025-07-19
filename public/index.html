@@ -159,20 +159,27 @@
                     .lineStyle(2, 0xff3333, 0.5)
                     .strokeRect(0, 950, 1200, 2); // Death boundary line
                     
-                // Add ground extension visual so players can see fall zone
+                // Add void/pit area - dark empty space for falling
                 this.add.graphics()
-                    .fillStyle(0x4a4a4a) // Darker ground color
-                    .fillRect(200, 600, 800, 350) // Extended ground area
-                    .lineStyle(2, 0x666666)
-                    .strokeRect(200, 600, 800, 350);
+                    .fillStyle(0x1a1a1a) // Very dark void color
+                    .fillRect(200, 600, 800, 350) // Pit void area
+                    .lineStyle(3, 0x333333, 0.8)
+                    .strokeRect(200, 600, 800, 350); // Subtle outline
+                    
+                // Add falling hazard indicators
+                for (let i = 0; i < 5; i++) {
+                    this.add.graphics()
+                        .lineStyle(2, 0xff3333, 0.3)
+                        .strokeRect(250 + i * 140, 650 + i * 50, 100, 20); // Scattered danger indicators
+                }
                     
                 // Add danger text in the pit
-                this.add.text(600, 800, 'DANGER ZONE', {
-                    fontSize: '24px',
+                this.add.text(600, 800, 'VOID - FALL TO DEATH', {
+                    fontSize: '20px',
                     fill: '#ff3333',
                     stroke: '#000000',
                     strokeThickness: 2
-                }).setOrigin(0.5).setAlpha(0.7);
+                }).setOrigin(0.5).setAlpha(0.8);
                 
                 // Add side cliff walls to show fall-off areas
                 this.add.graphics()
@@ -419,26 +426,51 @@
             document.getElementById('player-count').textContent = `Players: ${count}`;
         }
 
+        let lastUIUpdate = 0;
+        let lastPlayerState = {};
+        const UI_UPDATE_INTERVAL = 50; // Update UI only every 50ms
+        
         function updateUI() {
+            const now = Date.now();
             const myPlayer = gameState.players[myPlayerId];
-            if (myPlayer) {
-                document.getElementById('health').textContent = `Health: ${myPlayer.health}`;
-                document.getElementById('lives').textContent = `Lives: ${myPlayer.lives}`;
-                
-                // Update match status
-                const statusElement = document.getElementById('match-status');
-                if (myPlayer.eliminated) {
-                    statusElement.textContent = 'ELIMINATED - Spectating';
-                    statusElement.style.color = '#ff6666';
-                } else if (myPlayer.isDead) {
-                    statusElement.textContent = 'RESPAWNING...';
-                    statusElement.style.color = '#ffff66';
-                } else if (myPlayer.isInvincible) {
-                    statusElement.textContent = 'INVINCIBLE';
-                    statusElement.style.color = '#66ffff';
-                } else {
-                    statusElement.textContent = '';
-                }
+            
+            if (!myPlayer) return;
+            
+            // Check if player state has actually changed
+            const currentState = {
+                health: myPlayer.health,
+                lives: myPlayer.lives,
+                eliminated: myPlayer.eliminated,
+                isDead: myPlayer.isDead,
+                isInvincible: myPlayer.isInvincible
+            };
+            
+            const stateChanged = JSON.stringify(currentState) !== JSON.stringify(lastPlayerState);
+            
+            // Throttle UI updates unless state changed
+            if (!stateChanged && now - lastUIUpdate < UI_UPDATE_INTERVAL) {
+                return;
+            }
+            
+            lastUIUpdate = now;
+            lastPlayerState = currentState;
+            
+            document.getElementById('health').textContent = `Health: ${myPlayer.health}`;
+            document.getElementById('lives').textContent = `Lives: ${myPlayer.lives}`;
+            
+            // Update match status
+            const statusElement = document.getElementById('match-status');
+            if (myPlayer.eliminated) {
+                statusElement.textContent = 'ELIMINATED - Spectating';
+                statusElement.style.color = '#ff6666';
+            } else if (myPlayer.isDead) {
+                statusElement.textContent = 'RESPAWNING...';
+                statusElement.style.color = '#ffff66';
+            } else if (myPlayer.isInvincible) {
+                statusElement.textContent = 'INVINCIBLE';
+                statusElement.style.color = '#66ffff';
+            } else {
+                statusElement.textContent = '';
             }
         }
 
@@ -608,11 +640,8 @@
                 }
             }
 
-            // Fallback to ground level if nothing else
-            if (!isGrounded && player.y >= PHYSICS_CONSTANTS.GROUND_Y) {
-                isGrounded = true;
-                groundY = PHYSICS_CONSTANTS.GROUND_Y;
-            }
+            // No hardcoded ground fallback - match server behavior
+            // Players should only collide with defined platforms for fall-off deaths to work
 
             return { isGrounded, groundY, platform: landedPlatform };
         }
@@ -723,14 +752,22 @@
             const serverPlayer = gameState.players[myPlayerId];
             const serverAgreesGrounded = serverPlayer && serverPlayer.isGrounded;
 
-            if (groundState.isGrounded && serverAgreesGrounded) {
-                // Do not force exact Y; just stop vertical movement for smoothness
-                clientPlayerState.velocityY = 0;
-                if (!clientPlayerState.isGrounded) {
+            // Improved ground state synchronization
+            if (groundState.isGrounded) {
+                if (serverAgreesGrounded) {
+                    // Both client and server agree - maintain stable state
+                    clientPlayerState.velocityY = 0;
+                    if (!clientPlayerState.isGrounded) {
+                        clientPlayerState.isGrounded = true;
+                        clientPlayerState.jumpsRemaining = 2;
+                    }
+                } else if (Math.abs(clientPlayerState.y - (serverPlayer?.y || 0)) < 10) {
+                    // Small position difference - trust client prediction
+                    clientPlayerState.velocityY = 0;
                     clientPlayerState.isGrounded = true;
-                    clientPlayerState.jumpsRemaining = 2;
                 }
             } else {
+                // Not grounded on any platform
                 clientPlayerState.isGrounded = false;
             }
             
@@ -833,16 +870,24 @@
                 Math.pow(clientPlayerState.velocityY - serverVelY, 2)
             );
             
-            // Reduce error threshold for more sensitive corrections
-            const errorThreshold = 3; // Reduced from 5px
-            const velocityThreshold = 50; // New velocity error threshold
+            // Smart error thresholds based on movement state
+            let errorThreshold = 5; // Base threshold
+            let velocityThreshold = 50;
+            
+            // More lenient thresholds when grounded and stationary
+            if (serverPlayer.isGrounded && Math.abs(serverVelX) < 1 && Math.abs(serverVelY) < 1) {
+                errorThreshold = 8; // Allow more variance when stable
+                velocityThreshold = 100;
+            }
             
             // More aggressive correction for high errors or velocity mismatches
-            let correctionFactor = 0.15; // Increased from 0.1
-            if (positionError > 15) {
-                correctionFactor = 0.3; // Aggressive correction for large errors
+            let correctionFactor = 0.1; // Base correction factor
+            if (positionError > 20) {
+                correctionFactor = 0.4; // Very aggressive for large errors
+            } else if (positionError > 10) {
+                correctionFactor = 0.25; // Moderate correction
             } else if (velocityError > velocityThreshold) {
-                correctionFactor = 0.25; // Faster correction for velocity mismatches
+                correctionFactor = 0.2; // Velocity-based correction
             }
             
             // Apply correction if error is significant
@@ -874,10 +919,21 @@
             updateDebugPanel();
         }
         
+        let lastDebugUpdate = 0;
+        const DEBUG_UPDATE_INTERVAL = 100; // Update debug panel only every 100ms
+        
         function updateDebugPanel() {
+            const now = Date.now();
+            
+            // Throttle debug panel updates to reduce DOM manipulation
+            if (now - lastDebugUpdate < DEBUG_UPDATE_INTERVAL) {
+                return;
+            }
+            lastDebugUpdate = now;
+            
             document.getElementById('prediction-status').textContent = predictionEnabled ? 'ON' : 'OFF';
             document.getElementById('buffer-size').textContent = inputBuffer.length;
-            document.getElementById('last-update').textContent = Date.now() - lastServerUpdate;
+            document.getElementById('last-update').textContent = now - lastServerUpdate;
             
             if (predictionEnabled && clientPlayerState && gameState.players[myPlayerId]) {
                 const serverPlayer = gameState.players[myPlayerId];

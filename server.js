@@ -59,9 +59,12 @@ function checkPlayerDeath(player, playerId) {
                          player.x > DEATH_BOUNDARIES.RIGHT || 
                          player.y > DEATH_BOUNDARIES.BOTTOM;
     
-    // Debug logging
+    // Debug logging for fall-through testing
+    if (player.y > 600) { // Log when players enter the pit area
+        console.log(`Player ${playerId} in pit: x=${player.x}, y=${player.y}, outOfBounds=${isOutOfBounds}`);
+    }
     if (player.x < -150 || player.x > 950 || player.y > 850) {
-        console.log(`Player ${playerId} near boundary: x=${player.x}, y=${player.y}, outOfBounds=${isOutOfBounds}`);
+        console.log(`Player ${playerId} near death boundary: x=${player.x}, y=${player.y}, outOfBounds=${isOutOfBounds}`);
     }
     
     if (isOutOfBounds) {
@@ -239,7 +242,6 @@ function getPlayerGroundState(player, droppingFromPlatformId = null) {
                     }
                     
                     if (player.y < platformTop) { // Player center is above platform top
-                        console.log(`Landing on one-way platform ${platform.id}`);
                         isGrounded = true;
                         // Position player so bottom touches platform top
                         groundY = PlatformUtils.getPlayerStandingY(platform);
@@ -248,7 +250,6 @@ function getPlayerGroundState(player, droppingFromPlatformId = null) {
                     }
                 } else {
                     // Solid platforms - can land from any direction (but usually from above)
-                    console.log(`Landing on solid platform ${platform.id}`);
                     isGrounded = true;
                     // Position player so bottom touches platform top
                     groundY = PlatformUtils.getPlayerStandingY(platform);
@@ -259,11 +260,8 @@ function getPlayerGroundState(player, droppingFromPlatformId = null) {
         }
     }
     
-    // Check original ground level if no platform collision
-    if (!isGrounded && player.y >= GROUND_Y) {
-        isGrounded = true;
-        groundY = GROUND_Y;
-    }
+    // Remove hardcoded ground collision to allow fall-through deaths
+    // Players should only collide with defined platforms, not an invisible floor
     
     // If player has fallen far enough below the platform he dropped from, clear flag
     if (droppingFromPlatformId &&
@@ -309,8 +307,13 @@ function getNearestSpawnPoint(x, y) {
     const spawnPlatforms = PLATFORMS.filter(p => p.type === PLATFORM_TYPES.SPAWN);
     
     if (spawnPlatforms.length === 0) {
-        // Fallback to ground center if no spawn platforms
-        return { x: 400, y: GROUND_Y - 30 };
+        // Fallback to main ground platform if no spawn platforms
+        const mainGround = PLATFORMS.find(p => p.id === 'ground-main');
+        if (mainGround) {
+            return { x: 400, y: PlatformUtils.getPlayerStandingY(mainGround) };
+        }
+        // Last resort fallback
+        return { x: 400, y: 530 };
     }
     
     let nearestSpawn = spawnPlatforms[0];
@@ -551,9 +554,9 @@ function updatePhysics() {
         const groundState = getPlayerGroundState(player, player.droppingFromPlatform);
         
         if (groundState.isGrounded) {
-            // Debug logging for platform landing
-            if (!player.isGrounded) {
-                console.log(`Player ${playerId} landed at y=${player.y}, ground=${groundState.groundY}`);
+            // Only log significant state changes or initial landings
+            if (!player.isGrounded && Math.abs(player.y - groundState.groundY) > 5) {
+                console.log(`Player ${playerId} landed on ${groundState.platform?.id || 'ground'} at y=${groundState.groundY}`);
             }
             
             player.y = groundState.groundY;

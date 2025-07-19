@@ -172,11 +172,39 @@ function leaveRoom(socketId) {
                 room.emptyAt = Date.now();
             }
             
-            // If host left and there are other players, assign new host
-            if (room.hostId === socketId && room.players.size > 0) {
-                const newHostId = room.players.keys().next().value;
-                room.hostId = newHostId;
-                console.log(`New host for room ${code}: ${newHostId}`);
+            // If host left, handle based on game state
+            if (room.hostId === socketId) {
+                if (room.players.size > 0) {
+                    // If game hasn't started yet, close the room
+                    if (room.gameState.phase === 'lobby') {
+                        console.log(`Host left room ${code} before game started - closing room`);
+                        // Notify all remaining players that room is closing
+                        room.players.forEach((_, playerId) => {
+                            const playerSocket = io.sockets.sockets.get(playerId);
+                            if (playerSocket) {
+                                playerSocket.emit('roomClosed', {
+                                    reason: 'Host left the room',
+                                    message: 'The host has left the room. Returning to main menu.'
+                                });
+                                playerSocket.leave(code);
+                            }
+                        });
+                        // Clear all players and mark for immediate cleanup
+                        room.players.clear();
+                        room.emptyAt = Date.now();
+                        room.isActive = false;
+                    } else {
+                        // Game is in progress or finished, assign new host
+                        const newHostId = room.players.keys().next().value;
+                        room.hostId = newHostId;
+                        console.log(`New host for room ${code}: ${newHostId}`);
+                    }
+                } else {
+                    // Host left empty room - close it immediately
+                    console.log(`Host left empty room ${code} - closing room immediately`);
+                    room.emptyAt = Date.now();
+                    room.isActive = false;
+                }
             }
             
             break;
@@ -446,22 +474,43 @@ function checkMatchEnd(roomCode = null) {
             room.gameState.phase = 'game-over';
             room.gameState.matchInProgress = false;
             
-            // Prepare final stats for players in this room only
-            const playerStats = roomPlayerIds.map(id => ({
-                playerId: id,
-                playerName: `Player ${id.substring(0, 8)}...`,
-                lives: players[id].lives,
-                eliminated: players[id].eliminated,
-                isWinner: id === winnerId,
-                kills: players[id].kills || 0,
-                deaths: players[id].deaths || 0,
-                // Calculate K/D ratio
-                kdr: players[id].deaths > 0 ? (players[id].kills / players[id].deaths).toFixed(2) : players[id].kills.toString()
-            }));
+            // Prepare final stats for players in this room only (including disconnected players)
+            const playerStats = roomPlayerIds.map(id => {
+                const player = players[id];
+                if (!player) {
+                    // Player disconnected during game - mark as DQ
+                    return {
+                        playerId: id,
+                        playerName: `Player ${id.substring(0, 8)}...`,
+                        lives: 0,
+                        eliminated: true,
+                        isWinner: false,
+                        kills: 0,
+                        deaths: 0,
+                        kdr: '0.00',
+                        disconnected: true,
+                        rank: 'DQ'
+                    };
+                } else {
+                    return {
+                        playerId: id,
+                        playerName: `Player ${id.substring(0, 8)}...`,
+                        lives: player.lives,
+                        eliminated: player.eliminated,
+                        isWinner: id === winnerId,
+                        kills: player.kills || 0,
+                        deaths: player.deaths || 0,
+                        // Calculate K/D ratio
+                        kdr: player.deaths > 0 ? (player.kills / player.deaths).toFixed(2) : player.kills.toString(),
+                        disconnected: false
+                    };
+                }
+            });
             
-            // Sort by winner first, then by kills, then by lowest deaths
+            // Sort by: winner first, then by disconnected status (DQ last), then by kills, then by lowest deaths
             playerStats.sort((a, b) => {
                 if (a.isWinner !== b.isWinner) return b.isWinner - a.isWinner;
+                if (a.disconnected !== b.disconnected) return a.disconnected - b.disconnected; // DQ last
                 if (a.kills !== b.kills) return b.kills - a.kills;
                 return a.deaths - b.deaths;
             });
@@ -1357,7 +1406,12 @@ io.on('connection', (socket) => {
                 });
             }
             
-            const playerList = Array.from(roomInfo.room.players.values());
+            const playerList = Array.from(roomInfo.room.players.values()).map(p => ({
+                id: p.socketId,
+                socketId: p.socketId, // For backward compatibility
+                name: `Player ${p.socketId.substring(0, 8)}...`,
+                isHost: p.socketId === roomInfo.room.hostId
+            }));
             
             callback({ 
                 success: true, 
@@ -1609,9 +1663,22 @@ io.on('connection', (socket) => {
                 playerCount: roomInfo.room.players.size,
                 maxPlayers: ROOM_CONFIG.MAX_PLAYERS,
                 players: Array.from(roomInfo.room.players.values()).map(p => ({
-                    id: p.id,
-                    name: `Player ${p.id.substring(0, 8)}...`,
-                    isHost: p.id === roomInfo.room.hostId
+                    id: p.socketId,
+                    name: `Player ${p.socketId.substring(0, 8)}...`,
+                    isHost: p.socketId === roomInfo.room.hostId
+                }))
+            });
+            
+            // Notify all other players in the room about the updated room state
+            socket.to(roomInfo.code).emit('playerReturnedToLobby', {
+                playerId: socket.id,
+                playerName: `Player ${socket.id.substring(0, 8)}...`,
+                roomCode: roomInfo.code,
+                playerCount: roomInfo.room.players.size,
+                players: Array.from(roomInfo.room.players.values()).map(p => ({
+                    id: p.socketId,
+                    name: `Player ${p.socketId.substring(0, 8)}...`,
+                    isHost: p.socketId === roomInfo.room.hostId
                 }))
             });
             

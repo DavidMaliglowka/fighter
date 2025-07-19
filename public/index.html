@@ -151,6 +151,13 @@
             border-left: 4px solid #4CAF50;
         }
         
+        #game-over-screen .stats-table tr.disconnected {
+            background: rgba(128, 128, 128, 0.2);
+            border-left: 4px solid #888;
+            color: #aaa;
+            font-style: italic;
+        }
+        
         #game-over-screen .game-over-buttons {
             display: flex;
             gap: 15px;
@@ -581,8 +588,9 @@
                         playerDiv.classList.add('player-host');
                     }
                     
+                    const playerId = player.socketId || player.id;
                     playerDiv.innerHTML = `
-                        <span>Player ${player.socketId.substring(0, 8)}...</span>
+                        <span>${player.name || `Player ${playerId.substring(0, 8)}...`}</span>
                         <span>${player.isHost ? '👑 Host' : '🕹️ Player'}</span>
                     `;
                     
@@ -925,18 +933,20 @@
             
             // Listen for room closure
             socket.on('roomClosed', (event) => {
-                if (currentRoom && event.code === currentRoom.code) {
-                    currentRoom = null;
-                    isHost = false;
-                    showMainMenu();
-                    
-                    let reason = 'Unknown reason';
-                    if (event.reason === 'cleanup') {
-                        reason = 'Room was inactive for too long';
-                    }
-                    
-                    showMessage(`Room closed: ${reason}`, 'error');
-                }
+                currentRoom = null;
+                isHost = false;
+                gameStarted = false;
+                
+                // Hide game over screen if visible
+                hideGameOverScreen();
+                
+                // Show main menu
+                roomUI.style.display = 'block';
+                showMainMenu();
+                
+                // Show appropriate message
+                const message = event.message || `Room closed: ${event.reason || 'Unknown reason'}`;
+                showMessage(message, 'error');
             });
             
             // Listen for room errors
@@ -1031,6 +1041,13 @@
                 showRoomLobby(event.roomCode, event.isHost);
                 currentRoom = { code: event.roomCode };
                 isHost = event.isHost;
+                
+                // Request updated room info to refresh player list
+                socket.emit('getRoomInfo', (roomInfo) => {
+                    if (roomInfo.success) {
+                        updatePlayerList(roomInfo.players);
+                    }
+                });
             });
             
             // Listen for room joined event (also triggered on return to lobby)
@@ -1045,6 +1062,17 @@
                 // Update player list if provided
                 if (event.players) {
                     updatePlayerList(event.players);
+                }
+            });
+            
+            // Listen for other players returning to lobby
+            socket.on('playerReturnedToLobby', (event) => {
+                console.log('Player returned to lobby:', event);
+                
+                // Update player list if we're in the same room and showing lobby
+                if (currentRoom && currentRoom.code === event.roomCode && roomLobby.style.display !== 'none') {
+                    updatePlayerList(event.players);
+                    playerCount.textContent = event.playerCount;
                 }
             });
             
@@ -2095,20 +2123,34 @@
             // Clear and populate stats table
             statsTbody.innerHTML = '';
             
+            // Track numerical rank for non-DQ players
+            let numericalRank = 1;
+            
             gameOverData.playerStats.forEach((player, index) => {
                 const row = document.createElement('tr');
                 
-                // Add special classes for winner and current player
+                // Add special classes for winner, current player, and disconnected
                 if (player.isWinner) {
                     row.classList.add('winner');
                 }
                 if (player.playerId === socket.id) {
                     row.classList.add('current-player');
                 }
+                if (player.disconnected) {
+                    row.classList.add('disconnected');
+                }
+                
+                // Display rank as DQ for disconnected players, otherwise show numerical position
+                const rank = player.disconnected ? 'DQ' : `#${numericalRank}`;
+                if (!player.disconnected) {
+                    numericalRank++;
+                }
+                
+                const playerDisplayName = player.playerName + (player.playerId === socket.id ? ' (You)' : '') + (player.disconnected ? ' [DISCONNECTED]' : '');
                 
                 row.innerHTML = `
-                    <td>#${index + 1}</td>
-                    <td>${player.playerName}${player.playerId === socket.id ? ' (You)' : ''}</td>
+                    <td>${rank}</td>
+                    <td>${playerDisplayName}</td>
                     <td>${player.kills}</td>
                     <td>${player.deaths}</td>
                     <td>${player.kdr}</td>

@@ -17,8 +17,7 @@
             min-height: 100vh;
         }
         #game-container {
-            border: 2px solid #333;
-            border-radius: 10px;
+            /* Removed border and border-radius for cleaner look */
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
         }
         #ui {
@@ -149,43 +148,14 @@
                 .fillStyle(0x333333)
                 .fillRect(0, 0, 1200, 1000);
                 
-            // Add visual indicators for the main play area (800px center)
-            this.add.graphics()
-                .lineStyle(2, 0x555555)
-                .strokeRect(200, 0, 800, 600); // Main play area outline
+            // Removed play area outline for cleaner look
                 
-                            // Add visual indicator for death zone
-                this.add.graphics()
-                    .lineStyle(2, 0xff3333, 0.5)
-                    .strokeRect(0, 950, 1200, 2); // Death boundary line
+                // Removed death boundary line for cleaner look
                     
-                // Add void/pit area - dark empty space for falling
+                // Bottom area now matches background - simple and clean
                 this.add.graphics()
-                    .fillStyle(0x1a1a1a) // Very dark void color
-                    .fillRect(200, 600, 800, 350) // Pit void area
-                    .lineStyle(3, 0x333333, 0.8)
-                    .strokeRect(200, 600, 800, 350); // Subtle outline
-                    
-                // Add falling hazard indicators
-                for (let i = 0; i < 5; i++) {
-                    this.add.graphics()
-                        .lineStyle(2, 0xff3333, 0.3)
-                        .strokeRect(250 + i * 140, 650 + i * 50, 100, 20); // Scattered danger indicators
-                }
-                    
-                // Add danger text in the pit
-                this.add.text(600, 800, 'VOID - FALL TO DEATH', {
-                    fontSize: '20px',
-                    fill: '#ff3333',
-                    stroke: '#000000',
-                    strokeThickness: 2
-                }).setOrigin(0.5).setAlpha(0.8);
-                
-                // Add side cliff walls to show fall-off areas
-                this.add.graphics()
-                    .fillStyle(0x8B4513) // Brown cliff color
-                    .fillRect(0, 600, 200, 350) // Left cliff
-                    .fillRect(1000, 600, 200, 350); // Right cliff
+                    .fillStyle(0x333333) // Same grey as main background
+                    .fillRect(0, 600, 1200, 400); // Fill entire bottom area with background color
         }
 
         // Platforms are now server-side only - no client collision callbacks needed
@@ -223,11 +193,7 @@
                 this.add.rectangle(400, 580, 800, 40, 0x8B4513);
             }
             
-            // Add some background elements (offset for centered play area)
-            this.add.rectangle(300, 100, 20, 100, 0x654321); // Tree trunk (100 + 200 offset)
-            this.add.circle(300, 80, 40, 0x228B22); // Tree leaves
-            this.add.rectangle(900, 120, 20, 80, 0x654321); // Tree trunk (700 + 200 offset)
-            this.add.circle(900, 100, 35, 0x228B22); // Tree leaves
+            // Background elements removed for cleaner look
             
             cursors = this.input.keyboard.createCursorKeys();
             spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
@@ -248,8 +214,12 @@
             const pKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
             pKey.on('down', () => {
                 predictionEnabled = !predictionEnabled;
+                console.log(`Prediction toggled: ${predictionEnabled ? 'ON' : 'OFF'}`);
                 if (!predictionEnabled) {
                     clientPlayerState = null; // Reset client state
+                    console.log('Client state reset - prediction disabled');
+                } else {
+                    console.log('Prediction enabled - client state will reinitialize');
                 }
                 updateDebugPanel();
             });
@@ -671,7 +641,7 @@
             }
             
             // Movement prediction with improved accuracy
-            const moveSpeed = clientPlayerState.blocking ? 2 : 4; // Match server MOVEMENT_SPEED
+            const moveSpeed = clientPlayerState.blocking ? 3 : 6; // Match server MOVEMENT_SPEED (1.5x faster)
             
             // Better direction change handling - reset velocity first
             let newVelocityX = 0;
@@ -871,23 +841,26 @@
             );
             
             // Smart error thresholds based on movement state
-            let errorThreshold = 5; // Base threshold
-            let velocityThreshold = 50;
+            let errorThreshold = 8; // More lenient base threshold for smooth movement
+            let velocityThreshold = 75;
             
-            // More lenient thresholds when grounded and stationary
-            if (serverPlayer.isGrounded && Math.abs(serverVelX) < 1 && Math.abs(serverVelY) < 1) {
-                errorThreshold = 8; // Allow more variance when stable
+            // Even more lenient thresholds when actively moving to prevent fighting
+            if (Math.abs(serverVelX) > 1) {
+                errorThreshold = 12; // Very lenient when moving horizontally
+                velocityThreshold = 150;
+            } else if (serverPlayer.isGrounded && Math.abs(serverVelX) < 1 && Math.abs(serverVelY) < 1) {
+                errorThreshold = 6; // Tighter when stationary
                 velocityThreshold = 100;
             }
             
-            // More aggressive correction for high errors or velocity mismatches
-            let correctionFactor = 0.1; // Base correction factor
-            if (positionError > 20) {
-                correctionFactor = 0.4; // Very aggressive for large errors
-            } else if (positionError > 10) {
-                correctionFactor = 0.25; // Moderate correction
+            // Gentler correction factors for smoother movement
+            let correctionFactor = 0.05; // Much gentler base correction
+            if (positionError > 25) {
+                correctionFactor = 0.3; // Still aggressive for large errors
+            } else if (positionError > 15) {
+                correctionFactor = 0.15; // Moderate correction
             } else if (velocityError > velocityThreshold) {
-                correctionFactor = 0.2; // Velocity-based correction
+                correctionFactor = 0.1; // Gentle velocity-based correction
             }
             
             // Apply correction if error is significant
@@ -925,13 +898,19 @@
         function updateDebugPanel() {
             const now = Date.now();
             
-            // Throttle debug panel updates to reduce DOM manipulation
+            // Always update prediction status immediately when toggled, throttle other updates
+            const statusElement = document.getElementById('prediction-status');
+            if (statusElement) {
+                statusElement.textContent = predictionEnabled ? 'ON' : 'OFF';
+                statusElement.style.color = predictionEnabled ? '#66ff66' : '#ff6666';
+            }
+            
+            // Throttle other debug panel updates to reduce DOM manipulation
             if (now - lastDebugUpdate < DEBUG_UPDATE_INTERVAL) {
                 return;
             }
             lastDebugUpdate = now;
             
-            document.getElementById('prediction-status').textContent = predictionEnabled ? 'ON' : 'OFF';
             document.getElementById('buffer-size').textContent = inputBuffer.length;
             document.getElementById('last-update').textContent = now - lastServerUpdate;
             

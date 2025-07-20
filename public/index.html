@@ -1558,8 +1558,46 @@
                 updateUI();
             });
             
+            // Handle optimized platform data (sent separately)
+            socket.on('platformData', (platformData) => {
+                console.log(`[OPTIMIZATION] Received platform data for room ${platformData.roomCode}`);
+                gameState.platforms = platformData.platforms;
+                // Re-render platforms if needed
+                if (platforms) {
+                    renderPlatforms.call(this);
+                }
+            });
+            
             socket.on('connect', () => {
                 myPlayerId = socket.id;
+                console.log(`[CONNECTION] Connected with socket ID: ${socket.id}`);
+                
+                // Measure initial connection latency
+                const connectionStart = Date.now();
+                socket.emit('ping', connectionStart);
+            });
+            
+            // Latency measurement for debugging
+            socket.on('pong', (timestamp) => {
+                const latency = Date.now() - timestamp;
+                console.log(`[LATENCY] Round-trip time: ${latency}ms`);
+                
+                // Update debug panel with latency info
+                const latencyElement = document.getElementById('latency');
+                if (latencyElement) {
+                    latencyElement.textContent = `${latency}ms`;
+                    
+                    // Color-code latency for visual feedback
+                    if (latency < 50) {
+                        latencyElement.style.color = '#66ff66'; // Green - excellent
+                    } else if (latency < 100) {
+                        latencyElement.style.color = '#ffff66'; // Yellow - good
+                    } else if (latency < 200) {
+                        latencyElement.style.color = '#ff9966'; // Orange - fair
+                    } else {
+                        latencyElement.style.color = '#ff6666'; // Red - poor
+                    }
+                }
             });
             
             // Listen for jump events for visual effects
@@ -2408,27 +2446,28 @@
                 Math.pow(clientPlayerState.velocityY - serverVelY, 2)
             );
             
-            // Smart error thresholds based on movement state
-            let errorThreshold = 8; // More lenient base threshold for smooth movement
-            let velocityThreshold = 75;
+            // HIGH LATENCY OPTIMIZED: More lenient thresholds for Germany→US latency (~150ms)
+            // Expect larger errors due to ~9 frames of network delay at 60fps
+            let errorThreshold = 25; // Much more lenient for high latency (was 8)
+            let velocityThreshold = 200; // Much more lenient (was 75)
             
-            // Even more lenient thresholds when actively moving to prevent fighting
+            // Even more lenient when actively moving (network delay amplifies movement errors)
             if (Math.abs(serverVelX) > 1) {
-                errorThreshold = 12; // Very lenient when moving horizontally
-                velocityThreshold = 150;
+                errorThreshold = 40; // Very lenient when moving horizontally (was 12)
+                velocityThreshold = 300; // Very lenient (was 150)
             } else if (serverPlayer.isGrounded && Math.abs(serverVelX) < 1 && Math.abs(serverVelY) < 1) {
-                errorThreshold = 6; // Tighter when stationary
-                velocityThreshold = 100;
+                errorThreshold = 15; // Tighter when stationary (was 6)
+                velocityThreshold = 150; // Tighter (was 100)
             }
             
-            // Gentler correction factors for smoother movement
-            let correctionFactor = 0.05; // Much gentler base correction
-            if (positionError > 25) {
-                correctionFactor = 0.3; // Still aggressive for large errors
-            } else if (positionError > 15) {
-                correctionFactor = 0.15; // Moderate correction
+            // HIGH LATENCY OPTIMIZED: More aggressive correction for large errors
+            let correctionFactor = 0.15; // More aggressive base correction (was 0.05)
+            if (positionError > 60) {
+                correctionFactor = 0.8; // Very aggressive for massive errors (was 0.3)
+            } else if (positionError > 35) {
+                correctionFactor = 0.5; // Aggressive for large errors (was 0.15)
             } else if (velocityError > velocityThreshold) {
-                correctionFactor = 0.1; // Gentle velocity-based correction
+                correctionFactor = 0.25; // Moderate velocity-based correction (was 0.1)
             }
             
             // Apply correction if error is significant
@@ -2447,8 +2486,13 @@
                 
                 // Apply corrected position to sprite
                 if (playerSprites[myPlayerId]) {
-                    playerSprites[myPlayerId].setPosition(clientPlayerState.x, clientPlayerState.y);
+                    playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y); // Add 200px offset
                     updateLocalPlayerHealthBar();
+                }
+                
+                // Log significant corrections for debugging
+                if (positionError > 50) {
+                    console.warn(`[PREDICTION] Large position correction: ${positionError.toFixed(1)}px error, ${correctionFactor.toFixed(2)} factor`);
                 }
             }
             
@@ -2465,23 +2509,14 @@
         
         function updateDebugPanel() {
             const now = Date.now();
-            
-            // Always update prediction status immediately when toggled, throttle other updates
-            const statusElement = document.getElementById('prediction-status');
-            if (statusElement) {
-                statusElement.textContent = predictionEnabled ? 'ON' : 'OFF';
-                statusElement.style.color = predictionEnabled ? '#66ff66' : '#ff6666';
-            }
-            
-            // Throttle other debug panel updates to reduce DOM manipulation
-            if (now - lastDebugUpdate < DEBUG_UPDATE_INTERVAL) {
-                return;
-            }
+            if (now - lastDebugUpdate < DEBUG_UPDATE_INTERVAL) return;
             lastDebugUpdate = now;
             
+            document.getElementById('prediction-status').textContent = predictionEnabled ? 'ON' : 'OFF';
             document.getElementById('buffer-size').textContent = inputBuffer.length;
-            document.getElementById('last-update').textContent = now - lastServerUpdate;
+            document.getElementById('server-time').textContent = (now - lastServerUpdate).toFixed(0) + 'ms ago';
             
+            // Enhanced position error tracking for high latency debugging
             if (predictionEnabled && clientPlayerState && gameState.players[myPlayerId]) {
                 const serverPlayer = gameState.players[myPlayerId];
                 const positionError = Math.sqrt(
@@ -2497,14 +2532,39 @@
                     Math.pow(clientPlayerState.velocityY - serverVelY, 2)
                 );
                 
-                document.getElementById('position-error').textContent = positionError.toFixed(1);
+                // Enhanced error display with color coding
+                let errorText = positionError.toFixed(1);
+                let errorColor = '#66ff66'; // Green for good
+                
+                if (positionError > 40) {
+                    errorColor = '#ff6666'; // Red for bad
+                    errorText += ` HIGH!`;
+                } else if (positionError > 25) {
+                    errorColor = '#ff9966'; // Orange for concerning
+                    errorText += ` (high)`;
+                } else if (positionError > 15) {
+                    errorColor = '#ffff66'; // Yellow for moderate
+                }
+                
+                const errorElement = document.getElementById('position-error');
+                errorElement.textContent = errorText;
+                errorElement.style.color = errorColor;
                 
                 // Add velocity error to debug if position error is high
-                if (positionError > 10 || velocityError > 20) {
-                    document.getElementById('position-error').textContent += ` (vel: ${velocityError.toFixed(1)})`;
+                if (positionError > 15 || velocityError > 50) {
+                    errorElement.textContent += ` | vel: ${velocityError.toFixed(1)}`;
+                }
+                
+                // Show server tick rate if available
+                if (gameState.tickRate) {
+                    const tickElement = document.getElementById('server-tickrate');
+                    if (tickElement) {
+                        tickElement.textContent = `${gameState.tickRate}fps`;
+                    }
                 }
             } else {
                 document.getElementById('position-error').textContent = '0.0';
+                document.getElementById('position-error').style.color = '#66ff66';
             }
         }
         

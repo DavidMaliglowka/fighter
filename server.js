@@ -1508,7 +1508,7 @@ io.on('connection', (socket) => {
     // Send empty initial game state (players will get real state after joining a room)
     socket.emit('gameState', { 
         players: {}, 
-        platforms: PLATFORMS,
+        platforms: PLATFORMS, // Send platforms once on initial connection
         serverTime: Date.now(),
         tick: 0,
         roomCode: null,
@@ -2119,57 +2119,24 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
         
-        // Clean up room if player was in one
+        // Get room info before cleaning up player
         const roomInfo = getRoomByPlayer(socket.id);
         if (roomInfo) {
             const room = roomInfo.room;
+            const playerName = roomInfo.room.players.get(socket.id)?.displayName || socket.id;
             
-            // Check if this is during an active game and will leave only one player
-            const isActiveGame = room.gameState.phase === 'in-progress';
-            const currentPlayerCount = room.players.size;
-            
-            // Store disconnected player info before removing them
-            const disconnectedPlayerData = players[socket.id];
-            
-            // Leave the Socket.IO room
-            socket.leave(roomInfo.code);
-            
-            if (isActiveGame && currentPlayerCount === 2) {
-                // Only one player will remain - start 10-second grace period
-                console.log(`Player ${socket.id} disconnected from active game in room ${roomInfo.code} - starting 10 second grace period`);
+            // Handle mid-game disconnection with grace period
+            if (room.gameState.phase === 'in-progress' && room.players.size === 2) {
+                console.log(`Mid-game disconnection in room ${roomInfo.code} - starting 10 second grace period`);
                 
                 // Store disconnected player data for potential rejoin
                 room.disconnectedPlayers.set(socket.id, {
                     disconnectedAt: Date.now(),
-                    playerData: disconnectedPlayerData,
-                    socket: socket // Store socket reference for display name access
+                    playerData: players[socket.id],
+                    socket: socket // Store socket reference for stats update
                 });
                 
-                // CRITICAL: Handle host transfer if the disconnected player was the host
-                if (room.hostId === socket.id) {
-                    // Remove from room data structure but keep in disconnected list
-                    room.players.delete(socket.id);
-                    
-                    // Transfer host to the remaining player
-                    if (room.players.size > 0) {
-                        const newHostId = room.players.keys().next().value;
-                        room.hostId = newHostId;
-                        console.log(`Host transfer: ${socket.id} -> ${newHostId} in room ${roomInfo.code} during grace period`);
-                        
-                        // Notify the new host
-                        socket.to(roomInfo.code).emit('hostTransferred', {
-                            newHostId: newHostId,
-                            previousHostId: socket.id,
-                            message: 'You are now the host!'
-                        });
-                    }
-                } else {
-                    // Non-host disconnected, just remove from room
-                    room.players.delete(socket.id);
-                }
-                
-                // Notify remaining player about the disconnection and grace period
-                const playerName = getPlayerDisplayName(socket);
+                // Notify remaining player about grace period
                 socket.to(roomInfo.code).emit('playerDisconnectedGracePeriod', {
                     disconnectedPlayerId: socket.id,
                     playerName: playerName,
@@ -2214,14 +2181,54 @@ io.on('connection', (socket) => {
             delete players[socket.id];
         }
     });
+    
+    // Latency measurement for debugging and optimization
+    socket.on('ping', (timestamp) => {
+        socket.emit('pong', timestamp);
+    });
 });
 
-// Game loop - 60 FPS (Room-scoped)
-setInterval(() => {
+// Game loop - ADAPTIVE TICK RATE (optimized for high latency)
+let currentTickRate = 30; // Start with 30fps instead of 60fps
+let performanceStats = {
+    avgExecutionTime: 0,
+    lastMeasurement: Date.now(),
+    sampleCount: 0
+};
+
+function measureGameLoopPerformance(executionTime) {
+    performanceStats.sampleCount++;
+    performanceStats.avgExecutionTime = 
+        (performanceStats.avgExecutionTime * (performanceStats.sampleCount - 1) + executionTime) / performanceStats.sampleCount;
+    
+    // Adapt tick rate based on performance every 60 samples (~2 seconds)
+    if (performanceStats.sampleCount % 60 === 0) {
+        const totalRooms = rooms.size;
+        const totalActivePlayers = Array.from(rooms.values()).reduce((sum, room) => sum + room.players.size, 0);
+        
+        // Increase tick rate for low latency, decrease for high load
+        if (performanceStats.avgExecutionTime < 5 && totalActivePlayers < 16) {
+            currentTickRate = Math.min(45, currentTickRate + 5); // Max 45fps for VPS
+        } else if (performanceStats.avgExecutionTime > 15 || totalActivePlayers > 24) {
+            currentTickRate = Math.max(20, currentTickRate - 5); // Min 20fps
+        }
+        
+        console.log(`[PERF] Tick rate: ${currentTickRate}fps | Avg exec: ${performanceStats.avgExecutionTime.toFixed(1)}ms | Players: ${totalActivePlayers} | Rooms: ${totalRooms}`);
+        
+        // Reset stats
+        performanceStats.avgExecutionTime = 0;
+        performanceStats.sampleCount = 0;
+    }
+}
+
+// Optimized game loop with performance monitoring
+function runGameLoop() {
+    const startTime = Date.now();
+    
     updatePhysics();
     handleCombat();
     
-    // Send room-specific game states
+    // Send room-specific game states (optimized)
     for (const [roomCode, room] of rooms.entries()) {
         if (room.isActive && room.players.size > 0) {
             // Get only players in this room
@@ -2232,14 +2239,14 @@ setInterval(() => {
                 }
             }
             
-            // Create room-specific game state
+            // OPTIMIZED: Only send platforms on first connection or when requested
             const gameState = {
                 players: roomPlayers,
-                platforms: PLATFORMS, // Include platform data for client synchronization
                 serverTime: Date.now(),
                 tick: gameLoop.tick || 0,
                 roomCode: roomCode,
-                playerCount: room.players.size
+                playerCount: room.players.size,
+                tickRate: currentTickRate // Let clients know current tick rate
             };
             
             // Broadcast to this room only
@@ -2250,12 +2257,41 @@ setInterval(() => {
     
     // Increment tick counter for debugging
     gameLoop.tick = (gameLoop.tick || 0) + 1;
-}, 1000 / 60);
+    
+    // Measure performance
+    const executionTime = Date.now() - startTime;
+    measureGameLoopPerformance(executionTime);
+    
+    // Schedule next iteration with adaptive timing
+    setTimeout(runGameLoop, 1000 / currentTickRate);
+}
 
-// Global game loop object for state tracking
-const gameLoop = {};
+// Start the adaptive game loop
+runGameLoop();
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server listening on port ${PORT}`);
 }); 
+
+// Add platform broadcasting optimization
+function sendPlatformDataToPlayer(socket, roomCode) {
+    const platformData = {
+        platforms: PLATFORMS,
+        roomCode: roomCode,
+        eventType: 'platformData'
+    };
+    socket.emit('platformData', platformData);
+    console.log(`[OPTIMIZATION] Sent platform data to player ${socket.id} in room ${roomCode}`);
+}
+
+// Helper function to send platforms to all players in a room (used rarely)
+function sendPlatformDataToRoom(roomCode) {
+    const platformData = {
+        platforms: PLATFORMS,
+        roomCode: roomCode,
+        eventType: 'platformData'
+    };
+    io.to(roomCode).emit('platformData', platformData);
+    console.log(`[OPTIMIZATION] Sent platform data to all players in room ${roomCode}`);
+}

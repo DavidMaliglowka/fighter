@@ -573,11 +573,12 @@
         <div>Shift+Arrow: Dash</div>
         <div>Double-tap Arrow: Dash</div>
         <div>P: Toggle Prediction</div>
+        <div>R: Force Resync (debug)</div>
     </div>
     
     <div id="prediction-debug" style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px;">
         <div>Prediction: <span id="prediction-status">ON</span></div>
-        <div>Position Error: <span id="position-error">0.0</span>px</div>
+                        <div>Position Error: <span id="position-error">0.0</span>px <span id="correction-status"></span></div>
         <div>Buffer Size: <span id="buffer-size">0</span></div>
         <div>Last Update: <span id="server-time">0</span>ms ago</div>
         <div>Input Status: <span id="input-status">Normal</span></div>
@@ -1161,10 +1162,13 @@
         let inputBuffer = [];
         let lastServerUpdate = 0;
         let predictionEnabled = true;
+        
+        // Log initial physics configuration
+        console.log(`[CLIENT PHYSICS] Started with 30fps (deltaTime: ${(1/30).toFixed(4)}s) to match server tick rate`);
         const PHYSICS_CONSTANTS = {
             GRAVITY: 1200, // Increased for snappier falls
             GROUND_Y: 560,
-            FRAME_RATE: 60,
+            FRAME_RATE: 30, // Match server tick rate for consistency
             JUMP_VELOCITY_SINGLE: -550, // Slightly stronger jumps
             JUMP_VELOCITY_DOUBLE: -450
         };
@@ -1529,7 +1533,7 @@
             const pKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
             pKey.on('down', () => {
                 predictionEnabled = !predictionEnabled;
-                console.log(`Prediction toggled: ${predictionEnabled ? 'ON' : 'OFF'}`);
+                console.log(`Prediction toggled: ${predictionEnabled ? 'ON' : 'OFF'} (30fps sync'd with server)`);
                 if (!predictionEnabled) {
                     clientPlayerState = null; // Reset client state
                     console.log('Client state reset - prediction disabled');
@@ -1539,9 +1543,36 @@
                         playerSprites[myPlayerId].setPosition(serverPlayer.x + 200, serverPlayer.y);
                     }
                 } else {
-                    console.log('Prediction enabled - client state will reinitialize');
+                    console.log(`Prediction enabled - 30fps client physics (deltaTime: ${(1/PHYSICS_CONSTANTS.FRAME_RATE).toFixed(4)}s)`);
                 }
                 updateDebugPanel();
+            });
+            
+            // Force resync key (R key)
+            const rKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+            rKey.on('down', () => {
+                if (predictionEnabled && myPlayerId && gameState.players[myPlayerId] && clientPlayerState) {
+                    const serverPlayer = gameState.players[myPlayerId];
+                    
+                    console.log(`[FORCE RESYNC] Before - Client: (${clientPlayerState.x.toFixed(1)}, ${clientPlayerState.y.toFixed(1)}) | Server: (${serverPlayer.x.toFixed(1)}, ${serverPlayer.y.toFixed(1)})`);
+                    
+                    // Force client state to exactly match server
+                    clientPlayerState.x = serverPlayer.x;
+                    clientPlayerState.y = serverPlayer.y;
+                    clientPlayerState.velocityX = serverPlayer.velocityX || 0;
+                    clientPlayerState.velocityY = serverPlayer.velocityY || 0;
+                    clientPlayerState.isGrounded = serverPlayer.isGrounded;
+                    clientPlayerState.jumpsRemaining = serverPlayer.jumpsRemaining;
+                    
+                    // Update sprite position
+                    if (playerSprites[myPlayerId]) {
+                        playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y);
+                        updateLocalPlayerHealthBar();
+                    }
+                    
+                    console.log(`[FORCE RESYNC] After - Client: (${clientPlayerState.x.toFixed(1)}, ${clientPlayerState.y.toFixed(1)}) | Sprite: (${playerSprites[myPlayerId].x - 200}, ${playerSprites[myPlayerId].y})`);
+                    console.log('[FORCE RESYNC] Client state forcibly synchronized with server');
+                }
             });
             
             // Initialize socket connection with auth token
@@ -2133,6 +2164,8 @@
             const serverPlayer = gameState.players[myPlayerId];
             if (!serverPlayer) return;
             
+            console.log(`[CLIENT INIT] Initializing client state from server position: (${serverPlayer.x}, ${serverPlayer.y})`);
+            
             // Perfect sync with server state
             clientPlayerState = {
                 x: serverPlayer.x,
@@ -2152,11 +2185,21 @@
                 dashVelocity: 0 // New for dash velocity
             };
             
+            console.log(`[CLIENT INIT] Client state initialized:`, clientPlayerState);
+            
             // Force immediate position sync to eliminate initial error
             if (playerSprites[myPlayerId]) {
-                playerSprites[myPlayerId].setPosition(clientPlayerState.x, clientPlayerState.y);
+                console.log(`[CLIENT INIT] Setting sprite position to (${clientPlayerState.x + 200}, ${clientPlayerState.y})`);
+                playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y);
                 updateLocalPlayerHealthBar();
             }
+            
+            // Verify initial synchronization
+            const initialError = Math.sqrt(
+                Math.pow(clientPlayerState.x - serverPlayer.x, 2) + 
+                Math.pow(clientPlayerState.y - serverPlayer.y, 2)
+            );
+            console.log(`[CLIENT INIT] Initial synchronization error: ${initialError.toFixed(3)}px (should be 0.000)`);
         }
         
         function updateLocalPlayerHealthBar() {
@@ -2229,12 +2272,14 @@
         }
  
         function applyClientSidePrediction(inputs) {
-            // Use actual frame timing for accurate physics
+            // Use FIXED timestep to match server exactly (crucial for multiplayer sync)
+            const deltaTime = 1 / PHYSICS_CONSTANTS.FRAME_RATE; // Fixed 1/60 = 0.0167s
             const now = Date.now();
-            if (!this.lastPredictionTime) this.lastPredictionTime = now;
-            const actualDeltaTime = (now - this.lastPredictionTime) / 1000; // Convert to seconds
-            const deltaTime = Math.min(actualDeltaTime, 1/30); // Cap at 30fps to prevent large jumps
-            this.lastPredictionTime = now;
+            
+            // Log initial state for debugging
+            const preX = clientPlayerState.x;
+            const preY = clientPlayerState.y;
+            const preVelY = clientPlayerState.velocityY;
             
             // Apply same anti-cheat logic as server: prevent conflicting inputs
             let inputsCancelled = false;
@@ -2273,6 +2318,7 @@
             // Jump prediction with exact server matching
             if (inputs.jump && validateClientJump(now)) {
                 performClientJump(now);
+                console.log(`[CLIENT PHYSICS] Jump performed - velocity set to ${clientPlayerState.velocityY}`);
             }
             
             // Dash prediction with client-side validation
@@ -2288,15 +2334,16 @@
                 return;
             }
             
-            // Only override client physics for extreme disagreements or when grounded
+            // Only override client physics for major disagreements
             const yDifference = Math.abs(clientPlayerState.y - serverPlayer.y);
-            const shouldTrustServer = yDifference > 100 || // Extreme disagreement
-                                     (serverPlayer.isGrounded && yDifference > 50); // Server says grounded with big difference
+            const shouldTrustServer = yDifference > 80 || // Extreme disagreement  
+                                     (serverPlayer.isGrounded && !clientPlayerState.isGrounded && yDifference > 40); // Server says grounded, client doesn't
             
             if (shouldTrustServer) {
-                // Large disagreement - gradually sync to server
+                // Major disagreement - gradually sync to server
                 const yDiff = serverPlayer.y - clientPlayerState.y;
-                clientPlayerState.y += yDiff * 0.3; // Moderate correction
+                console.log(`[CLIENT PHYSICS] Major disagreement detected! Y diff: ${yDiff.toFixed(1)}px, trusting server`);
+                clientPlayerState.y += yDiff * 0.25; // Gentle correction
                 clientPlayerState.velocityY = serverPlayer.velocityY || 0;
                 clientPlayerState.isGrounded = serverPlayer.isGrounded;
                 clientPlayerState.jumpsRemaining = serverPlayer.jumpsRemaining;
@@ -2313,6 +2360,7 @@
                     clientPlayerState.velocityY = Math.max(clientPlayerState.velocityY, 200);
                     clientPlayerState.droppingTimer = 12;
                     clientPlayerState.isGrounded = false;
+                    console.log(`[CLIENT PHYSICS] Dropping through platform - velocityY set to ${clientPlayerState.velocityY}`);
                 } else {
                     // Decrement dropping timer
                     if (clientPlayerState.droppingTimer && clientPlayerState.droppingTimer > 0) {
@@ -2322,6 +2370,7 @@
                     // Apply gravity and vertical movement
                     if (!groundState.isGrounded) {
                         // Apply gravity consistently for airborne movement
+                        const preGravityVelY = clientPlayerState.velocityY;
                         clientPlayerState.velocityY += PHYSICS_CONSTANTS.GRAVITY * deltaTime;
                         
                         // Cap maximum fall speed for more predictable physics
@@ -2330,10 +2379,19 @@
                             clientPlayerState.velocityY = maxFallSpeed;
                         }
                         
+                        const preMovementY = clientPlayerState.y;
                         clientPlayerState.y += clientPlayerState.velocityY * deltaTime;
                         clientPlayerState.isGrounded = false;
+                        
+                        // Detailed gravity logging
+                        if (Math.abs(preGravityVelY - clientPlayerState.velocityY) > 5) {
+                            console.log(`[CLIENT PHYSICS] Gravity applied - velY: ${preGravityVelY.toFixed(1)} -> ${clientPlayerState.velocityY.toFixed(1)}, Y: ${preMovementY.toFixed(1)} -> ${clientPlayerState.y.toFixed(1)}`);
+                        }
                     } else {
                         // Grounded - stop vertical movement and position exactly
+                        if (!clientPlayerState.isGrounded) {
+                            console.log(`[CLIENT PHYSICS] Landing detected - Y: ${clientPlayerState.y.toFixed(1)} -> ${groundState.groundY.toFixed(1)}, platform: ${groundState.platform?.id || 'ground'}`);
+                        }
                         clientPlayerState.y = groundState.groundY;
                         clientPlayerState.velocityY = 0;
                         clientPlayerState.isGrounded = true;
@@ -2347,6 +2405,15 @@
             
             // Allow free movement beyond boundaries for fall-off deaths
             // No horizontal clamping - players can now fall off the sides
+            
+            // Log significant movement changes
+            const totalMovement = Math.sqrt(
+                Math.pow(clientPlayerState.x - preX, 2) + 
+                Math.pow(clientPlayerState.y - preY, 2)
+            );
+            if (totalMovement > 5) {
+                console.log(`[CLIENT MOVEMENT] Total: ${totalMovement.toFixed(1)}px | Pos: (${preX.toFixed(1)}, ${preY.toFixed(1)}) -> (${clientPlayerState.x.toFixed(1)}, ${clientPlayerState.y.toFixed(1)}) | VelY: ${preVelY.toFixed(1)} -> ${clientPlayerState.velocityY.toFixed(1)}`);
+            }
             
             // Apply predicted position to sprite
             if (playerSprites[myPlayerId]) {
@@ -2409,7 +2476,7 @@
                 updateLocalPlayerHealthBar();
             }
             
-                             // Reduced logging - only for debugging
+                             // Client dash prediction applied
         }
         
         function bufferInput(inputs) {
@@ -2458,34 +2525,65 @@
                 Math.pow(clientPlayerState.y - serverPlayer.y, 2)
             );
             
-            // SIMPLIFIED: Much more conservative reconciliation for high latency
-            // Use larger error thresholds to prevent jitter
-            const ERROR_THRESHOLD = 50; // Generous threshold for 150ms latency
-            const LARGE_ERROR_THRESHOLD = 100; // Threshold for immediate correction
+            // ENHANCED DEBUGGING: Log the actual differences
+            const xDiff = Math.abs(clientPlayerState.x - serverPlayer.x);
+            const yDiff = Math.abs(clientPlayerState.y - serverPlayer.y);
+            
+            // Log significant differences even if they're in "dead zone"
+            if (positionError > 5) {
+                console.log(`[POSITION DEBUG] Total Error: ${positionError.toFixed(1)}px | X diff: ${xDiff.toFixed(1)}px | Y diff: ${yDiff.toFixed(1)}px | Client: (${clientPlayerState.x.toFixed(1)}, ${clientPlayerState.y.toFixed(1)}) | Server: (${serverPlayer.x.toFixed(1)}, ${serverPlayer.y.toFixed(1)})`);
+            }
+            
+            // DEAD ZONE: Ignore small errors to prevent micro-jitter
+            const DEAD_ZONE = 5; // REDUCED from 12 to catch more issues
+            const ERROR_THRESHOLD = 20; // REDUCED from 30
+            const LARGE_ERROR_THRESHOLD = 50; // REDUCED from 70
+            
+            let correctionApplied = false;
+            
+            if (positionError < DEAD_ZONE) {
+                // Within dead zone - no correction needed
+                correctionApplied = false;
+            } else {
+                // Extra conservative during active movement to prevent jitter
+                const isFalling = clientPlayerState.velocityY > 200 && !clientPlayerState.isGrounded;
+                const justJumped = (Date.now() - clientPlayerState.lastJumpTime) < 500; // 500ms after jump
+                
+                if ((isFalling || justJumped) && positionError < ERROR_THRESHOLD * 1.5) {
+                    // During falls or recent jumps, be extra conservative with corrections
+                    correctionApplied = false;
+                    console.log(`[PREDICTION] Skipping correction during movement - falling: ${isFalling}, justJumped: ${justJumped}, error: ${positionError.toFixed(1)}px`);
+                } else {
+                    correctionApplied = true;
+                }
+            }
             
             // Conservative correction factors to prevent oscillation
-            let correctionFactor = 0.1; // Very gentle base correction
+            let correctionFactor = 0;
             
-                         if (positionError > LARGE_ERROR_THRESHOLD) {
-                 // Large error - use moderate correction to avoid snapping
-                 correctionFactor = 0.3;
-                 // Only log extreme corrections to avoid spam
-                 if (positionError > 200) {
-                     console.log(`[PREDICTION] Extreme correction: ${positionError.toFixed(1)}px`);
-                 }
-             } else if (positionError > ERROR_THRESHOLD) {
-                // Medium error - gentle correction
-                correctionFactor = 0.15;
-            } else {
-                // Small error - no correction needed, let prediction run
-                correctionFactor = 0;
+            if (correctionApplied) {
+                if (positionError > LARGE_ERROR_THRESHOLD) {
+                    // Large error - use gentle correction to avoid snapping
+                    correctionFactor = 0.3; // INCREASED from 0.2 for faster convergence
+                    console.log(`[PREDICTION] Large correction applied: ${positionError.toFixed(1)}px with factor ${correctionFactor}`);
+                } else if (positionError > ERROR_THRESHOLD) {
+                    // Medium error - very gentle correction
+                    correctionFactor = 0.15; // INCREASED from 0.08
+                    console.log(`[PREDICTION] Medium correction applied: ${positionError.toFixed(1)}px with factor ${correctionFactor}`);
+                }
             }
             
             // Apply correction only if needed
             if (correctionFactor > 0) {
+                // Store old position for debugging
+                const oldX = clientPlayerState.x;
+                const oldY = clientPlayerState.y;
+                
                 // Smooth interpolation towards server position
                 clientPlayerState.x += (serverPlayer.x - clientPlayerState.x) * correctionFactor;
                 clientPlayerState.y += (serverPlayer.y - clientPlayerState.y) * correctionFactor;
+                
+                console.log(`[CORRECTION] Applied: (${oldX.toFixed(1)}, ${oldY.toFixed(1)}) -> (${clientPlayerState.x.toFixed(1)}, ${clientPlayerState.y.toFixed(1)})`);
                 
                 // Gentle velocity sync only for large errors
                 if (positionError > LARGE_ERROR_THRESHOLD) {
@@ -2493,19 +2591,48 @@
                     clientPlayerState.velocityY = serverPlayer.velocityY || 0;
                 }
                 
-                // Apply corrected position to sprite
+                // Apply corrected position to sprite (only update if change is significant)
                 if (playerSprites[myPlayerId]) {
-                    playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y);
-                    updateLocalPlayerHealthBar();
+                    const currentSpriteX = playerSprites[myPlayerId].x - 200;
+                    const currentSpriteY = playerSprites[myPlayerId].y;
+                    const changeThreshold = 2; // Only update sprite for changes > 2px
+                    
+                    if (Math.abs(currentSpriteX - clientPlayerState.x) > changeThreshold || 
+                        Math.abs(currentSpriteY - clientPlayerState.y) > changeThreshold) {
+                        playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y);
+                        updateLocalPlayerHealthBar();
+                    }
                 }
             }
             
-            // Always sync critical non-position state
-            clientPlayerState.isGrounded = serverPlayer.isGrounded;
+            // Always sync critical non-position state (but be conservative about grounded state during prediction)
+            if (positionError > ERROR_THRESHOLD || Math.abs(clientPlayerState.y - serverPlayer.y) > 20) {
+                // Only override grounded state if there's significant disagreement
+                clientPlayerState.isGrounded = serverPlayer.isGrounded;
+            }
             clientPlayerState.jumpsRemaining = serverPlayer.jumpsRemaining;
             clientPlayerState.health = serverPlayer.health;
             
+            // Update correction status indicator
+            const correctionStatusEl = document.getElementById('correction-status');
+            if (correctionStatusEl) {
+                if (!correctionApplied) {
+                    if (positionError < DEAD_ZONE) {
+                        correctionStatusEl.textContent = '(dead zone)';
+                        correctionStatusEl.style.color = '#66ff66';
+                    } else {
+                        correctionStatusEl.textContent = '(skipped)';
+                        correctionStatusEl.style.color = '#ffff66';
+                    }
+                } else {
+                    correctionStatusEl.textContent = '(corrected)';
+                    correctionStatusEl.style.color = '#ff9966';
+                }
+            }
+            
             lastServerUpdate = Date.now();
+            
+            // Always update debug panel with current error info
             updateDebugPanel();
         }
         
@@ -2531,6 +2658,10 @@
                     Math.pow(clientPlayerState.y - serverPlayer.y, 2)
                 );
                 
+                // Calculate individual axis errors
+                const xError = Math.abs(clientPlayerState.x - serverPlayer.x);
+                const yError = Math.abs(clientPlayerState.y - serverPlayer.y);
+                
                 // Calculate velocity error for debug display
                 const serverVelX = serverPlayer.velocityX || 0;
                 const serverVelY = serverPlayer.velocityY || 0;
@@ -2540,7 +2671,7 @@
                 );
                 
                 // Enhanced error display with color coding
-                let errorText = positionError.toFixed(1);
+                let errorText = `${positionError.toFixed(1)}px (X:${xError.toFixed(1)} Y:${yError.toFixed(1)})`;
                 let errorColor = '#66ff66'; // Green for good
                 
                 if (positionError > 40) {
@@ -2551,22 +2682,27 @@
                     errorText += ` (high)`;
                 } else if (positionError > 15) {
                     errorColor = '#ffff66'; // Yellow for moderate
+                } else if (positionError > 5) {
+                    errorColor = '#66ffff'; // Cyan for minor
                 }
                 
                 const errorElement = document.getElementById('position-error');
                 errorElement.textContent = errorText;
                 errorElement.style.color = errorColor;
                 
-                // Add velocity error to debug if position error is high
-                if (positionError > 15 || velocityError > 50) {
-                    errorElement.textContent += ` | vel: ${velocityError.toFixed(1)}`;
+                // Update status to show actual positions if error is high
+                if (positionError > 15) {
+                    const statusText = `Client:(${clientPlayerState.x.toFixed(0)},${clientPlayerState.y.toFixed(0)}) Server:(${serverPlayer.x.toFixed(0)},${serverPlayer.y.toFixed(0)})`;
+                    document.getElementById('input-status').textContent = statusText;
+                    document.getElementById('input-status').style.fontSize = '10px';
                 }
                 
                 // Show server tick rate if available
                 if (gameState.tickRate) {
                     const tickElement = document.getElementById('server-tickrate');
                     if (tickElement) {
-                        tickElement.textContent = `${gameState.tickRate}fps`;
+                        tickElement.textContent = `${gameState.tickRate}fps (sync'd)`;
+                        tickElement.style.color = PHYSICS_CONSTANTS.FRAME_RATE === gameState.tickRate ? '#66ff66' : '#ff9966';
                     }
                 }
             } else {

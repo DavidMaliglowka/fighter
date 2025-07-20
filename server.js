@@ -142,7 +142,7 @@ const ATTACK_DAMAGE = 15;
 const MOVEMENT_SPEED = 6; // Increased by 1.5x for more responsive movement
 const GRAVITY = 1200; // Increased for snappier falls
 const GROUND_Y = 560; // Ground level (600 - 40 for ground height)
-const FRAME_RATE = 60;
+const FRAME_RATE = 30; // Match actual tick rate for consistency
 
 // Death boundary constants - extended fall-off area
 const DEATH_BOUNDARIES = {
@@ -1213,7 +1213,7 @@ function getPlayersInActiveRooms() {
 
 // Helper function to update physics
 function updatePhysics() {
-    const deltaTime = 1 / FRAME_RATE;
+    const deltaTime = 1 / currentTickRate; // Use actual tick rate, not fixed FRAME_RATE
     const activeRoomPlayers = getPlayersInActiveRooms();
     
     for (const playerId of activeRoomPlayers) {
@@ -2215,7 +2215,7 @@ function measureGameLoopPerformance(executionTime) {
         const totalRooms = rooms.size;
         const totalActivePlayers = Array.from(rooms.values()).reduce((sum, room) => sum + room.players.size, 0);
         
-        console.log(`[PERF] Fixed tick rate: ${currentTickRate}fps | Avg exec: ${performanceStats.avgExecutionTime.toFixed(1)}ms | Players: ${totalActivePlayers} | Rooms: ${totalRooms}`);
+        console.log(`[PERF] Consistent 30fps | Avg exec: ${performanceStats.avgExecutionTime.toFixed(1)}ms | Players: ${totalActivePlayers} | Rooms: ${totalRooms} | DeltaTime: ${(1/currentTickRate).toFixed(4)}s`);
         
         // Reset stats
         performanceStats.avgExecutionTime = 0;
@@ -2269,6 +2269,7 @@ function runGameLoop() {
 }
 
 // Start the fixed game loop
+console.log(`[GAME LOOP] Starting with consistent 30fps tick rate (deltaTime: ${(1/currentTickRate).toFixed(4)}s)`);
 runGameLoop();
 
 const PORT = process.env.PORT || 3000;

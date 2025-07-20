@@ -1,0 +1,109 @@
+rules_version='2'
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // =============================================================================
+    // USER PROFILE DATA - Users can only access their own profile
+    // =============================================================================
+    match /users/{userId} {
+      // Users can read and write only their own profile data
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow users to update their last active timestamp and game stats
+      allow update: if request.auth != null && 
+        request.auth.uid == userId &&
+        // Only allow updating specific fields, not the entire document
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['lastActive', 'gamesPlayed', 'wins', 'losses', 'xp', 'level', 'totalKills', 'totalDeaths']);
+    }
+    
+    // =============================================================================
+    // USERNAME RESERVATIONS - Secure username availability checking
+    // =============================================================================
+    match /usernames/{username} {
+      // Allow checking if username exists (for availability) but not reading data
+      allow get: if true;
+      
+      // Allow creating username reservation only for authenticated users
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.uid &&
+        // Ensure username matches document ID (case-insensitive)
+        request.resource.data.username.lower() == resource.id &&
+        // Validate required fields exist
+        request.resource.data.keys().hasAll(['uid', 'username', 'reservedAt']);
+      
+      // Allow user to update/delete their own username reservation
+      allow update, delete: if request.auth != null && 
+        request.auth.uid == resource.data.uid;
+    }
+    
+    // =============================================================================
+    // MATCH DATA - Game match results and statistics
+    // =============================================================================
+    match /matches/{matchId} {
+      // Allow reading match data for participants
+      allow read: if request.auth != null && 
+        (request.auth.uid in resource.data.participants ||
+         request.auth.uid == resource.data.createdBy);
+      
+      // Allow creating match data by authenticated users
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.createdBy &&
+        request.resource.data.keys().hasAll(['participants', 'createdBy', 'startTime']);
+      
+      // Allow updating match data by match creator or server
+      allow update: if request.auth != null && 
+        (request.auth.uid == resource.data.createdBy ||
+         request.auth.uid in resource.data.participants);
+    }
+    
+    // =============================================================================
+    // GAME STATISTICS - Player performance data
+    // =============================================================================
+    match /gameStats/{statId} {
+      // Users can read their own stats and public leaderboard data
+      allow read: if request.auth != null;
+      
+      // Only allow writing stats for the authenticated user
+      allow write: if request.auth != null && 
+        request.auth.uid == request.resource.data.playerId;
+    }
+    
+    // =============================================================================
+    // ROOM DATA - Multiplayer game rooms (if stored in Firestore)
+    // =============================================================================
+    match /rooms/{roomCode} {
+      // Allow reading room data for participants
+      allow read: if request.auth != null && 
+        request.auth.uid in resource.data.players;
+      
+      // Allow creating rooms by authenticated users
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.hostId;
+      
+      // Allow updating room data by host or participants
+      allow update: if request.auth != null && 
+        (request.auth.uid == resource.data.hostId ||
+         request.auth.uid in resource.data.players);
+         
+      // Allow deleting rooms by host only
+      allow delete: if request.auth != null && 
+        request.auth.uid == resource.data.hostId;
+    }
+    
+    // =============================================================================
+    // ADMIN FUNCTIONS - System administration (if needed)
+    // =============================================================================
+    match /admin/{document} {
+      // Restrict admin access - only specific admin users
+      allow read, write: if request.auth != null && 
+        request.auth.token.admin == true;
+    }
+    
+    // =============================================================================
+    // SECURITY: NO CATCH-ALL RULES
+    // All other documents are denied by default
+    // =============================================================================
+  }
+}

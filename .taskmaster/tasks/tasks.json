@@ -514,7 +514,7 @@
         "id": 9,
         "title": "Implement Hybrid Authentication System (Guest + Optional Accounts)",
         "description": "Create a hybrid authentication system supporting both anonymous guest play and optional user accounts, similar to Pokémon Showdown, with seamless switching between modes.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           8
         ],
@@ -526,16 +526,16 @@
             "id": 1,
             "title": "Firebase Auth Setup and Dual Provider Configuration",
             "description": "Set up Firebase Authentication with anonymous and email/password providers for hybrid authentication system",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
-            "details": "Install Firebase SDK and configure Firebase project with Authentication enabled. Set up anonymous authentication provider for guest users. Configure email/password authentication for registered accounts. Create Firebase config and initialization in client. Implement Firebase Auth state listeners to handle authentication changes. Set up proper security rules for anonymous vs authenticated users.",
+            "details": "Install Firebase SDK and configure Firebase project with Authentication enabled. Set up anonymous authentication provider for guest users. Configure email/password authentication for registered accounts. Create Firebase config and initialization in client. Implement Firebase Auth state listeners to handle authentication changes. Set up proper security rules for anonymous vs authenticated users.\n<info added on 2025-07-19T22:28:04.756Z>\nCOMPLETED: Firebase Auth Setup and Dual Provider Configuration\n\nSuccessfully implemented:\n1. Firebase SDK installation (compat version 10.7.1)\n2. Client-side Firebase config with anonymous + email/password providers\n3. Server-side Firebase Admin setup with JWT token management\n4. Authentication middleware for Socket.IO connections\n5. Complete auth UI with guest play, login, and registration forms\n6. Authentication state management and token passing to server\n\nKey Files Created/Modified:\n- package.json - Added Firebase, JWT, and dotenv dependencies\n- public/firebase-config.js - Client-side auth configuration (standalone version for reference)\n- firebase-admin.js - Server-side Firebase Admin and auth middleware\n- server.js - Integrated auth middleware with Socket.IO\n- public/index.html - Added Firebase CDN, auth UI, and auth logic integration\n\nArchitecture:\n- Anonymous auth for guest users (Firebase anonymous provider)\n- Email/password auth for registered users (Firebase auth provider)\n- JWT tokens for server session management\n- Socket.IO auth middleware for connection validation\n- Graceful fallback when Firebase is not configured\n\nNote: Firebase configuration requires actual Firebase project setup with proper credentials in .env file.\n</info added on 2025-07-19T22:28:04.756Z>\n<info added on 2025-07-20T09:35:04.955Z>\nISSUE RESOLVED: Firestore Database Setup Complete\n\nProblem: Registration failing with \"client is offline\" errors due to missing Firestore database.\n\nSolution Applied:\n1. Created Firestore database: firebase firestore:databases:create \"(default)\" --location=nam5\n2. Updated security rules for authentication-based access\n3. Deployed rules: firebase deploy --only firestore:rules\n\nUpdated Security Rules:\n- Anonymous and registered users can read/write data\n- User documents protected by auth.uid matching\n- Username availability checking enabled\n- Game stats protected per player\n\nTesting Status: Ready for full authentication testing\n- Guest authentication should work without errors\n- Email registration should create users successfully\n- Firebase Console should show authenticated users\n\nEnvironment: All Firebase services now properly configured and active.\n</info added on 2025-07-20T09:35:04.955Z>\n<info added on 2025-07-20T09:55:35.214Z>\nUX/UI IMPROVEMENT: Enhanced Authentication Flow\n\nProblem Solved: Clunky UI with authentication and room options stacked together confusingly.\n\nSolution Implemented:\n1. Stepped Authentication Flow:\n   - Step 1: Welcome screen with auth options only\n   - Step 2: Main menu with room options (post-auth)\n   - Step 3: Room lobby when in game\n   - Clean state transitions with no UI overlap\n\n2. Enhanced User Experience:\n   - Added user info display showing current player type (Guest/Registered)\n   - Added sign-out functionality for easy account switching\n   - Improved visual headers with emojis and clearer messaging\n   - Proper initial state management (auth-first)\n\n3. State Management Functions:\n   - Updated showAuthSection(), showMainMenu(), showRoomLobby()\n   - Added updateUserInfo() and handleSignOut() utilities\n   - Integrated with existing room management system\n   - Added proper initialization on page load\n\nTechnical Changes:\n- Enhanced HTML structure with better section organization\n- Updated JavaScript state management for clean transitions\n- Added authentication event listeners and sign-out handling\n- Improved integration between auth and room management systems\n\nUser Flow: Welcome → Authenticate → Room Options → Room Lobby → Game\nTesting: Ready for user testing of improved authentication experience\n</info added on 2025-07-20T09:55:35.214Z>\n<info added on 2025-07-20T10:13:28.723Z>\nUX REFINEMENT: Clean Authentication State Management\n\nIssues Fixed from User Feedback:\n1. Login/Register buttons persisting on second page - Enhanced state management with !important CSS overrides to force proper hiding of authentication UI when showing main menu\n2. Sign-out button taking vertical space - Replaced separate button with inline text link positioned under user info\n\nTechnical Improvements:\n- Enhanced showMainMenu(), showAuthSection(), showAuthForm() with robust CSS property setting using setProperty() with !important flags\n- Integrated sign-out link into user info display (updateUserInfo function)\n- Dynamic event listener binding for sign-out functionality\n- Improved state transition reliability and element selection safety\n\nUpdated User Info Display:\nGuest Player: David\nsign out\n\nUI Flow Now:\nPage 1: Welcome + Auth options only → Page 2: \"Ready to Fight!\" + Room options (clean, no auth UI) → Page 3: Room Lobby\n\nResult: Clean, stepped authentication flow with no UI element persistence between states. Sign-out is now space-efficient and integrated into user context display.\n\nStatus: Authentication UX complete and ready for game flow implementation.\n</info added on 2025-07-20T10:13:28.723Z>",
             "testStrategy": ""
           },
           {
             "id": 2,
             "title": "Guest Authentication Flow with Display Name Entry",
             "description": "Implement guest play mode requiring only display name entry with UUID generation and local storage persistence",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "details": "Create guest authentication flow with display name input only (no password required). Generate temporary UUID for guest users using crypto.randomUUID(). Implement local storage persistence for guest sessions with display name and UUID. Add display name validation (3-20 chars, no special characters). Create guest user object with isGuest flag. Implement automatic guest login on return visits using stored UUID.",
             "testStrategy": ""
@@ -544,7 +544,7 @@
             "id": 3,
             "title": "Registered User Authentication with JWT Tokens",
             "description": "Implement traditional username/password registration and login with JWT token management for persistent accounts",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
@@ -555,7 +555,7 @@
             "id": 4,
             "title": "Identity Protection and Username Reservation System",
             "description": "Implement system to prevent guests from using registered usernames and manage username reservations",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2,
               3
@@ -567,7 +567,7 @@
             "id": 5,
             "title": "Hybrid User Object Structure and Session Management",
             "description": "Implement unified user object structure supporting both guest and registered users with proper session handling",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               4
             ],
@@ -578,7 +578,7 @@
             "id": 6,
             "title": "Room Join UI with Authentication Mode Selection",
             "description": "Create room join interface with options for guest play or registered user login/registration",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               5
             ],
@@ -589,7 +589,7 @@
             "id": 7,
             "title": "Seamless Account Claiming and Mid-Session Registration",
             "description": "Implement ability for guests to register mid-session to claim their progress and convert to registered accounts",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               6
             ],
@@ -1041,11 +1041,25 @@
         ],
         "priority": "low",
         "subtasks": []
+      },
+      {
+        "id": 17,
+        "title": "Implement Username Display and Post-Match Statistics Tracking",
+        "description": "Replace hardcoded socket ID display names with actual usernames from Firebase Auth and implement automatic Firestore updates for match statistics including wins, losses, kills, and deaths.",
+        "details": "Replace socket ID display throughout the application with proper username handling from Firebase Auth. Update player object structure to include username field from authentication data instead of truncated socket IDs. Modify lobby UI components to display usernames in player lists, game over screens to show winner by username, and disconnection messages to reference proper usernames. Implement post-match statistics tracking by creating Firestore update functions that automatically record match results when games end. Add statistics fields to user documents: wins, losses, kills, deaths, matches_played, total_playtime. Create match result handler that triggers after game completion, iterating through all players to update their individual stats based on performance. Update server-side game logic to track kills/deaths during gameplay and aggregate data for Firestore updates. Implement batch write operations for efficient database updates. Add error handling for failed database writes with retry logic. Update all UI components including player cards, leaderboards, and profile displays to show usernames consistently. Ensure username display works for both guest users (display names) and registered users (Firebase usernames).",
+        "testStrategy": "Test username display appears correctly in lobby, game, and post-game screens instead of socket IDs. Verify Firestore statistics update automatically after match completion with correct win/loss/kill/death counts. Test with multiple players to ensure all statistics are recorded accurately. Verify guest users show display names while registered users show Firebase usernames. Test disconnection scenarios to ensure proper username display in disconnect messages. Verify batch database operations complete successfully and handle network failures gracefully.",
+        "status": "done",
+        "dependencies": [
+          9,
+          10
+        ],
+        "priority": "high",
+        "subtasks": []
       }
     ],
     "metadata": {
       "created": "2025-07-16T04:48:20.939Z",
-      "updated": "2025-07-19T19:14:27.213Z",
+      "updated": "2025-07-20T12:11:07.009Z",
       "description": "Tasks for master context"
     }
   }

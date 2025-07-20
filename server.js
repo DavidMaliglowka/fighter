@@ -3,6 +3,9 @@ const http = require('http');
 const socketIo = require('socket.io');
 const platformConfig = require('./public/platforms.js');
 
+// Import Firebase authentication
+const { serverAuthManager, socketAuthMiddleware } = require('./firebase-admin.js');
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
@@ -39,6 +42,75 @@ const DASH_DECAY_RATE = 0.85; // Velocity decay factor per frame (faster decay t
 
 // Platform system
 const { PLATFORMS, PLATFORM_TYPES, GAME_BOUNDS, PLATFORM_PHYSICS, PlatformUtils } = platformConfig;
+
+// ==================== PLAYER NAME UTILITIES ====================
+
+// Helper function to get player display name from socket
+function getPlayerDisplayName(socket) {
+    console.log(`[DEBUG] getPlayerDisplayName called for socket ${socket.id}`);
+    console.log(`[DEBUG] socket.user:`, socket.user ? {
+        uid: socket.user.uid,
+        displayName: socket.user.displayName,
+        isGuest: socket.user.isGuest,
+        isAnonymous: socket.user.isAnonymous
+    } : 'null');
+    
+    if (socket.user && socket.user.displayName) {
+        console.log(`[DEBUG] Using authenticated displayName: ${socket.user.displayName}`);
+        return socket.user.displayName;
+    }
+    
+    // Fallback to truncated socket ID if no authenticated user
+    const fallbackName = `Player ${socket.id.substring(0, 8)}...`;
+    console.log(`[DEBUG] Using fallback name: ${fallbackName}`);
+    return fallbackName;
+}
+
+// Helper function to update player stats in Firestore after match
+async function updatePlayerStatsInFirestore(playerId, playerSocket, stats) {
+    try {
+        if (!playerSocket || !playerSocket.user || !playerSocket.user.uid) {
+            // Skip Firestore update for unauthenticated users
+            console.log(`[STATS] Skipping Firestore update for unauthenticated user: ${playerId}`);
+            return;
+        }
+        
+        console.log(`[STATS] Updating stats for user ${playerSocket.user.uid} (${playerSocket.user.displayName}) - isGuest: ${playerSocket.user.isGuest}`);
+
+        const uid = playerSocket.user.uid;
+        const { serverAuthManager } = require('./firebase-admin.js');
+        
+        // Get user's current stats from Firestore
+        const userResult = await serverAuthManager.getUserData(uid);
+        if (!userResult.success) {
+            console.error(`Failed to get user data for stats update: ${uid}`);
+            return;
+        }
+
+        const currentStats = userResult.userData;
+        
+        // Calculate new cumulative stats
+        const newStats = {
+            gamesPlayed: (currentStats.gamesPlayed || 0) + 1,
+            wins: (currentStats.wins || 0) + (stats.isWinner ? 1 : 0),
+            losses: (currentStats.losses || 0) + (stats.isWinner ? 0 : 1),
+            totalKills: (currentStats.totalKills || 0) + (stats.kills || 0),
+            totalDeaths: (currentStats.totalDeaths || 0) + (stats.deaths || 0),
+            lastActive: new Date().toISOString()
+        };
+
+        // Update user stats in Firestore
+        const updateResult = await serverAuthManager.updateUserStats(uid, newStats);
+        if (updateResult.success) {
+            console.log(`Updated stats for user ${uid}: +${stats.kills} kills, +${stats.deaths} deaths, winner: ${stats.isWinner}`);
+        } else {
+            console.error(`Failed to update stats for user ${uid}:`, updateResult.error);
+        }
+        
+    } catch (error) {
+        console.error(`Error updating stats for player ${playerId}:`, error);
+    }
+}
 
 // ==================== SESSION CODE SYSTEM ====================
 
@@ -517,13 +589,15 @@ function checkMatchEnd(roomCode = null) {
             const playerStats = allRoomPlayerIds.map(id => {
                 const player = players[id];
                 const disconnectedData = room.disconnectedPlayers.get(id);
+                const playerSocket = io.sockets.sockets.get(id);
                 
                 if (!player && disconnectedData) {
                     // Player disconnected during game - use stored data and mark as DQ
                     const storedPlayer = disconnectedData.playerData;
+                    const disconnectedSocket = disconnectedData.socket;
                     return {
                         playerId: id,
-                        playerName: `Player ${id.substring(0, 8)}...`,
+                        playerName: disconnectedSocket ? getPlayerDisplayName(disconnectedSocket) : `Player ${id.substring(0, 8)}...`,
                         lives: storedPlayer ? storedPlayer.lives : 0,
                         eliminated: true,
                         isWinner: false,
@@ -537,7 +611,7 @@ function checkMatchEnd(roomCode = null) {
                     // Player disconnected and no data - fallback
                     return {
                         playerId: id,
-                        playerName: `Player ${id.substring(0, 8)}...`,
+                        playerName: playerSocket ? getPlayerDisplayName(playerSocket) : `Player ${id.substring(0, 8)}...`,
                         lives: 0,
                         eliminated: true,
                         isWinner: false,
@@ -551,7 +625,7 @@ function checkMatchEnd(roomCode = null) {
                     // Active player
                     return {
                         playerId: id,
-                        playerName: `Player ${id.substring(0, 8)}...`,
+                        playerName: playerSocket ? getPlayerDisplayName(playerSocket) : `Player ${id.substring(0, 8)}...`,
                         lives: player.lives,
                         eliminated: player.eliminated,
                         isWinner: id === winnerId,
@@ -572,10 +646,24 @@ function checkMatchEnd(roomCode = null) {
                 return a.deaths - b.deaths;
             });
             
+            // Update player stats in Firestore for authenticated users
+            playerStats.forEach(async (stats) => {
+                const playerSocket = io.sockets.sockets.get(stats.playerId);
+                if (playerSocket) {
+                    await updatePlayerStatsInFirestore(stats.playerId, playerSocket, stats);
+                } else if (room.disconnectedPlayers.has(stats.playerId)) {
+                    // Handle disconnected players
+                    const disconnectedData = room.disconnectedPlayers.get(stats.playerId);
+                    if (disconnectedData.socket) {
+                        await updatePlayerStatsInFirestore(stats.playerId, disconnectedData.socket, stats);
+                    }
+                }
+            });
+            
             // Emit game over event to this specific room only
             io.to(code).emit('gameOver', {
                 winnerId: winnerId,
-                winnerName: winnerId ? `Player ${winnerId.substring(0, 8)}...` : 'No Winner',
+                winnerName: winnerId ? (playerStats.find(p => p.playerId === winnerId)?.playerName || 'Winner') : 'No Winner',
                 playerStats: playerStats,
                 totalPlayers: playerStats.length,
                 roomCode: code,
@@ -1248,6 +1336,9 @@ function handleCombat() {
     }
 }
 
+// Add authentication middleware for Socket.IO
+io.use(socketAuthMiddleware);
+
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
     
@@ -1409,6 +1500,7 @@ io.on('connection', (socket) => {
                 // Notify existing players in the room
                 socket.to(result.room.code).emit('playerJoinedRoom', {
                     socketId: socket.id,
+                    playerName: getPlayerDisplayName(socket),
                     playerCount: result.room.players.size,
                     maxPlayers: ROOM_CONFIG.MAX_PLAYERS
                 });
@@ -1487,12 +1579,15 @@ io.on('connection', (socket) => {
                 });
             }
             
-            const playerList = Array.from(roomInfo.room.players.values()).map(p => ({
-                id: p.socketId,
-                socketId: p.socketId, // For backward compatibility
-                name: `Player ${p.socketId.substring(0, 8)}...`,
-                isHost: p.socketId === roomInfo.room.hostId
-            }));
+            const playerList = Array.from(roomInfo.room.players.values()).map(p => {
+                const playerSocket = io.sockets.sockets.get(p.socketId);
+                return {
+                    id: p.socketId,
+                    socketId: p.socketId, // For backward compatibility
+                    name: playerSocket ? getPlayerDisplayName(playerSocket) : `Player ${p.socketId.substring(0, 8)}...`,
+                    isHost: p.socketId === roomInfo.room.hostId
+                };
+            });
             
             callback({ 
                 success: true, 
@@ -1755,14 +1850,17 @@ io.on('connection', (socket) => {
             // Notify all other players in the room about the updated room state
             socket.to(roomInfo.code).emit('playerReturnedToLobby', {
                 playerId: socket.id,
-                playerName: `Player ${socket.id.substring(0, 8)}...`,
+                playerName: getPlayerDisplayName(socket),
                 roomCode: roomInfo.code,
                 playerCount: roomInfo.room.players.size,
-                players: Array.from(roomInfo.room.players.values()).map(p => ({
-                    id: p.socketId,
-                    name: `Player ${p.socketId.substring(0, 8)}...`,
-                    isHost: p.socketId === roomInfo.room.hostId
-                }))
+                players: Array.from(roomInfo.room.players.values()).map(p => {
+                    const playerSocket = io.sockets.sockets.get(p.socketId);
+                    return {
+                        id: p.socketId,
+                        name: playerSocket ? getPlayerDisplayName(playerSocket) : `Player ${p.socketId.substring(0, 8)}...`,
+                        isHost: p.socketId === roomInfo.room.hostId
+                    };
+                })
             });
             
             callback({ 
@@ -1779,6 +1877,48 @@ io.on('connection', (socket) => {
         }
     });
     
+    // Handle authentication after initial connection
+    socket.on('authenticate', async (data, callback) => {
+        try {
+            const { token } = data;
+            console.log(`[AUTH] Received authentication request from socket ${socket.id}`);
+            
+            if (!token) {
+                console.log(`[AUTH] No token provided`);
+                if (callback) callback({ success: false, error: 'No token provided' });
+                return;
+            }
+
+            // Verify token using existing auth manager
+            const firebaseResult = await serverAuthManager.verifyIdToken(token);
+            if (firebaseResult.success) {
+                socket.user = firebaseResult.user;
+                console.log(`[AUTH] Socket ${socket.id} authenticated successfully:`);
+                console.log(`[AUTH] - UID: ${socket.user.uid}`);
+                console.log(`[AUTH] - Display Name: ${socket.user.displayName}`);
+                console.log(`[AUTH] - Is Guest: ${socket.user.isGuest}`);
+                console.log(`[AUTH] - Is Anonymous: ${socket.user.isAnonymous}`);
+                
+                if (callback) {
+                    callback({ 
+                        success: true, 
+                        user: {
+                            uid: socket.user.uid,
+                            displayName: socket.user.displayName,
+                            email: socket.user.email
+                        }
+                    });
+                }
+            } else {
+                console.log(`[AUTH] Token verification failed for socket ${socket.id}:`, firebaseResult.error);
+                if (callback) callback({ success: false, error: firebaseResult.error });
+            }
+        } catch (error) {
+            console.error(`[AUTH] Authentication error for socket ${socket.id}:`, error);
+            if (callback) callback({ success: false, error: error.message });
+        }
+    });
+
     socket.on('input', (inputs) => {
         const player = players[socket.id];
         if (!player || player.health <= 0 || player.isDead || player.eliminated) return;
@@ -1879,7 +2019,8 @@ io.on('connection', (socket) => {
                 // Store disconnected player data for potential rejoin
                 room.disconnectedPlayers.set(socket.id, {
                     disconnectedAt: Date.now(),
-                    playerData: disconnectedPlayerData
+                    playerData: disconnectedPlayerData,
+                    socket: socket // Store socket reference for display name access
                 });
                 
                 // CRITICAL: Handle host transfer if the disconnected player was the host
@@ -1906,7 +2047,7 @@ io.on('connection', (socket) => {
                 }
                 
                 // Notify remaining player about the disconnection and grace period
-                const playerName = `Player ${socket.id.substring(0, 8)}...`;
+                const playerName = getPlayerDisplayName(socket);
                 socket.to(roomInfo.code).emit('playerDisconnectedGracePeriod', {
                     disconnectedPlayerId: socket.id,
                     playerName: playerName,

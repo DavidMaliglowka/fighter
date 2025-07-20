@@ -33,6 +33,8 @@ redis.conf
 *.csr
 jwt-secret.txt
 secrets/
+firebase-service-account.json
+*-service-account*.json
 
 # Testing and coverage
 coverage/

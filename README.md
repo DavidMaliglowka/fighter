@@ -1,4 +1,4 @@
-# Fighter Game
+# Super Vibe Bros
 
 A multiplayer, low-latency, web-based fighting game built with Phaser 3 and Socket.io.
 

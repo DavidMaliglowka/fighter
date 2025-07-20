@@ -1,10 +1,15 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Fighter Game</title>
+    <title>Super Vibe Bros</title>
     <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
     <script src="platforms.js"></script>
+    
+    <!-- Firebase CDN -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     <style>
         body {
             margin: 0;
@@ -234,8 +239,8 @@
         }
         
         .room-section {
-            margin: 30px 0;
-            padding: 20px;
+            margin: 16px 0;
+            padding: 8px;
             border: 1px solid #333;
             border-radius: 10px;
             background: rgba(255, 255, 255, 0.05);
@@ -290,7 +295,7 @@
         }
         
         #room-code-display {
-            font-size: 48px;
+            font-size: 36px;
             font-weight: bold;
             color: #4CAF50;
             background: rgba(76, 175, 80, 0.1);
@@ -416,10 +421,68 @@
     
     <!-- Room Management UI -->
     <div id="room-ui">
-        <h1>🥊 Fighter Game</h1>
+        <img src="assets/supervibebros-pixel.png" alt="Super Vibe Bros" style="height: 160px; vertical-align: middle;">
         
-        <!-- Main Menu (when not in room) -->
-        <div id="main-menu">
+        <!-- Authentication Section -->
+        <div id="auth-section">
+            <div class="room-section">
+                <h3>How would you like to play?</h3>
+                
+                <!-- Guest Play Option -->
+                <div class="auth-option">
+                    <h3 style="color: #4CAF50; margin: 10px 0;">🎮 Play as Guest</h3>
+                    <p style="color: #aaa; font-size: 14px; margin: 10px 0;">Jump right in! No account needed.</p>
+                    <input type="text" id="guest-name-input" class="room-input" placeholder="Your Name" maxlength="20" style="width: 200px; margin: 10px;" />
+                    <br>
+                    <button id="guest-play-btn" class="room-button">Start Playing</button>
+                </div>
+                
+                <div style="margin: 20px 0; color: #666;">- OR -</div>
+                
+                <!-- Registered User Options -->
+                <div class="auth-option">
+                    <h3 style="color: #2196F3; margin: 10px 0;">👤 Account Login</h3>
+                    <p style="color: #aaa; font-size: 14px; margin: 10px 0;">Save your progress and stats!</p>
+                    <button id="show-login-btn" class="room-button" style="background: #2196F3;">Login</button>
+                    <button id="show-register-btn" class="room-button" style="background: #FF9800; margin-left: 10px;">Register</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Login Form -->
+        <div id="login-form" style="display: none;">
+            <div class="room-section">
+                <h2>Login to Your Account</h2>
+                <input type="email" id="login-email" class="room-input" placeholder="Email" style="width: 250px; margin: 5px;" />
+                <br>
+                <input type="password" id="login-password" class="room-input" placeholder="Password" style="width: 250px; margin: 5px;" />
+                <br>
+                <button id="login-submit-btn" class="room-button" style="background: #2196F3;">Login</button>
+                <button id="back-to-auth-btn" class="room-button" style="background: #666; margin-left: 10px;">Back</button>
+            </div>
+        </div>
+        
+        <!-- Register Form -->
+        <div id="register-form" style="display: none;">
+            <div class="room-section">
+                <h2>Create New Account</h2>
+                <input type="text" id="register-username" class="room-input" placeholder="Username" style="width: 250px; margin: 5px;" />
+                <br>
+                <input type="email" id="register-email" class="room-input" placeholder="Email" style="width: 250px; margin: 5px;" />
+                <br>
+                <input type="password" id="register-password" class="room-input" placeholder="Password" style="width: 250px; margin: 5px;" />
+                <br>
+                <button id="register-submit-btn" class="room-button" style="background: #FF9800;">Create Account</button>
+                <button id="back-to-auth-btn2" class="room-button" style="background: #666; margin-left: 10px;">Back</button>
+            </div>
+        </div>
+        
+        <!-- Main Menu (when authenticated and not in room) -->
+        <div id="main-menu" style="display: none;">
+            <div id="authenticated-user-info" style="color: #4CAF50; margin-bottom: 20px; font-size: 14px;">
+                <!-- User info will be populated here -->
+            </div>
+            
             <div class="room-section">
                 <h2>Create a New Game</h2>
                 <button id="create-room-btn" class="room-button">Create Room</button>
@@ -447,10 +510,10 @@
                 </div>
             </div>
             
-            <div class="room-section">
+            <!-- <div class="room-section"> -->
                 <button id="start-game-btn" class="room-button" style="display: none;">Start Game</button>
                 <button id="leave-room-btn" class="room-button" style="background: #f44336;">Leave Room</button>
-            </div>
+            <!-- </div> -->
         </div>
         
         <!-- Messages -->
@@ -521,6 +584,505 @@
     </div>
     
     <script>
+        // ==================== FIREBASE AUTHENTICATION ====================
+        
+        // Firebase configuration - Real config from Firebase CLI
+        const firebaseConfig = {
+            apiKey: "AIzaSyAh2m1SciisBB6EDxmShQJyxW1uAp0Z32I",
+            authDomain: "fighter-game-multiplayer.firebaseapp.com", 
+            projectId: "fighter-game-multiplayer",
+            storageBucket: "fighter-game-multiplayer.firebasestorage.app",
+            messagingSenderId: "799099672774",
+            appId: "1:799099672774:web:8e080095ca01c28a1cdfc7"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        
+        // Authentication state management
+        let currentUser = null;
+        let authToken = null;
+        
+        // Authentication UI elements
+        const authSection = document.getElementById('auth-section');
+        const loginForm = document.getElementById('login-form');
+        const registerForm = document.getElementById('register-form');
+        
+        // Authentication event handlers
+        document.addEventListener('DOMContentLoaded', () => {
+            setupAuthEventListeners();
+            // Ensure clean initial state - show only authentication section
+            showAuthSection();
+        });
+        
+        function setupAuthEventListeners() {
+            // Guest play
+            document.getElementById('guest-play-btn').addEventListener('click', handleGuestPlay);
+            
+            // Show login/register forms
+            document.getElementById('show-login-btn').addEventListener('click', () => showAuthForm('login'));
+            document.getElementById('show-register-btn').addEventListener('click', () => showAuthForm('register'));
+            
+            // Back buttons
+            document.getElementById('back-to-auth-btn').addEventListener('click', showAuthSection);
+            document.getElementById('back-to-auth-btn2').addEventListener('click', showAuthSection);
+            
+            // Form submissions
+            document.getElementById('login-submit-btn').addEventListener('click', handleLogin);
+            document.getElementById('register-submit-btn').addEventListener('click', handleRegister);
+            
+            // Enter key handlers
+            document.getElementById('guest-name-input').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') handleGuestPlay();
+            });
+            document.getElementById('login-password').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') handleLogin();
+            });
+            document.getElementById('register-password').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') handleRegister();
+            });
+        }
+        
+        function showAuthSection() {
+            console.log('showAuthSection called - showing authentication UI');
+            
+            // Show authentication section
+            if (authSection) {
+                authSection.style.setProperty('display', 'block', 'important');
+                authSection.style.setProperty('visibility', 'visible', 'important');
+                authSection.style.setProperty('opacity', '1', 'important');
+                
+                // Restore visibility of child elements
+                const authChildren = authSection.querySelectorAll('*');
+                authChildren.forEach(child => {
+                    child.style.removeProperty('display');
+                });
+                console.log('Showed auth-section and restored', authChildren.length, 'children');
+            }
+            
+            // Hide all other sections
+            if (loginForm) {
+                loginForm.style.setProperty('display', 'none', 'important');
+            }
+            if (registerForm) {
+                registerForm.style.setProperty('display', 'none', 'important');
+            }
+            
+            // Hide main menu and room lobby
+            const mainMenuEl = document.getElementById('main-menu');
+            const roomLobbyEl = document.getElementById('room-lobby');
+            if (mainMenuEl) {
+                mainMenuEl.style.setProperty('display', 'none', 'important');
+            }
+            if (roomLobbyEl) {
+                roomLobbyEl.style.setProperty('display', 'none', 'important');
+            }
+            
+            // Show room UI container but only with auth section
+            roomUI.classList.remove('hidden');
+            
+            console.log('showAuthSection complete - only auth section should be visible');
+        }
+        
+        function showAuthForm(type) {
+            authSection.style.setProperty('display', 'none', 'important');
+            loginForm.style.setProperty('display', type === 'login' ? 'block' : 'none', 'important');
+            registerForm.style.setProperty('display', type === 'register' ? 'block' : 'none', 'important');
+            
+            // Hide main menu properly
+            const mainMenuEl = document.getElementById('main-menu');
+            if (mainMenuEl) mainMenuEl.style.setProperty('display', 'none', 'important');
+            
+            // Get roomLobby safely
+            const roomLobby = document.getElementById('room-lobby');
+            if (roomLobby) roomLobby.style.setProperty('display', 'none', 'important');
+            console.log('Showing auth form:', type);
+        }
+        
+        function showMainMenu() {
+            console.log('showMainMenu called - transitioning to main menu');
+            
+            // Hide all authentication UI components completely
+            if (authSection) {
+                authSection.style.setProperty('display', 'none', 'important');
+                authSection.style.setProperty('visibility', 'hidden', 'important');
+                authSection.style.setProperty('opacity', '0', 'important');
+                console.log('Hidden auth-section');
+            }
+            if (loginForm) {
+                loginForm.style.setProperty('display', 'none', 'important');
+                console.log('Hidden login-form');
+            }
+            if (registerForm) {
+                registerForm.style.setProperty('display', 'none', 'important');
+                console.log('Hidden register-form');
+            }
+            
+            // Show main menu and hide room lobby
+            const mainMenuElement = document.getElementById('main-menu');
+            const roomLobby = document.getElementById('room-lobby');
+            
+            if (mainMenuElement) {
+                mainMenuElement.style.setProperty('display', 'block', 'important');
+                console.log('Showed main-menu');
+            }
+            if (roomLobby) {
+                roomLobby.style.setProperty('display', 'none', 'important');
+                console.log('Hidden room-lobby');
+            }
+            
+            // Show room UI container
+            roomUI.classList.remove('hidden');
+            gameStarted = false;
+            
+            console.log('showMainMenu complete - should show main menu only');
+        }
+        
+
+        
+        // Guest authentication
+        async function handleGuestPlay() {
+            const displayName = document.getElementById('guest-name-input').value.trim();
+            
+            if (!displayName || displayName.length < 2) {
+                showMessage('Please enter a name (at least 2 characters)', 'error');
+                return;
+            }
+            
+            try {
+                // Sign in anonymously with Firebase
+                const userCredential = await auth.signInAnonymously();
+                const user = userCredential.user;
+                
+                // Update profile with display name
+                await user.updateProfile({ displayName: displayName });
+                
+                // Store guest user data
+                await db.collection('users').doc(user.uid).set({
+                    displayName: displayName,
+                    isGuest: true,
+                    isAnonymous: true,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    lastActive: firebase.firestore.FieldValue.serverTimestamp(),
+                    gamesPlayed: 0,
+                    wins: 0,
+                    losses: 0
+                });
+                
+                // Store in localStorage
+                localStorage.setItem('guestDisplayName', displayName);
+                localStorage.setItem('guestUserId', user.uid);
+                
+                currentUser = {
+                    uid: user.uid,
+                    displayName: displayName,
+                    isGuest: true,
+                    isAnonymous: true
+                };
+                
+                // Get Firebase ID token for server authentication
+                authToken = await user.getIdToken();
+                
+                console.log('Guest authentication successful:', user.uid);
+                showMessage(`Welcome ${displayName}! Playing as guest.`, 'success');
+                updateUserInfo(displayName, true);
+                
+                // Reconnect socket with auth token
+                await reconnectSocketWithAuth();
+                
+                showMainMenu();
+                
+            } catch (error) {
+                console.error('Guest authentication error:', error);
+                showMessage('Failed to start guest session: ' + error.message, 'error');
+            }
+        }
+        
+        // Login with email/password
+        async function handleLogin() {
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value;
+            
+            if (!email || !password) {
+                showMessage('Please enter both email and password', 'error');
+                return;
+            }
+            
+            try {
+                const userCredential = await auth.signInWithEmailAndPassword(email, password);
+                const user = userCredential.user;
+                
+                // Update last active timestamp
+                await db.collection('users').doc(user.uid).update({
+                    lastActive: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                
+                currentUser = {
+                    uid: user.uid,
+                    email: user.email,
+                    displayName: user.displayName,
+                    isGuest: false,
+                    isAnonymous: false
+                };
+                
+                // Get Firebase ID token for server authentication
+                authToken = await user.getIdToken();
+                
+                console.log('Login successful:', user.uid);
+                showMessage(`Welcome back ${user.displayName}!`, 'success');
+                updateUserInfo(user.displayName || user.email, false);
+                
+                // Reconnect socket with auth token
+                await reconnectSocketWithAuth();
+                
+                showMainMenu();
+                
+            } catch (error) {
+                console.error('Login error:', error);
+                showMessage('Login failed: ' + error.message, 'error');
+            }
+        }
+        
+        // Register new user
+        async function handleRegister() {
+            const username = document.getElementById('register-username').value.trim();
+            const email = document.getElementById('register-email').value.trim();
+            const password = document.getElementById('register-password').value;
+            
+            if (!username || !email || !password) {
+                showMessage('Please fill in all fields', 'error');
+                return;
+            }
+            
+            if (username.length < 3 || username.length > 20) {
+                showMessage('Username must be 3-20 characters', 'error');
+                return;
+            }
+            
+            try {
+                console.log('Starting registration process...');
+                
+                // Check if username is available
+                console.log('Checking username availability...');
+                const usernameDoc = await db.collection('usernames').doc(username.toLowerCase()).get();
+                if (usernameDoc.exists) {
+                    showMessage('Username already taken', 'error');
+                    return;
+                }
+                console.log('Username available, proceeding...');
+                
+                console.log('Creating Firebase Auth user...');
+                const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+                const user = userCredential.user;
+                console.log('Firebase Auth user created:', user.uid);
+                
+                // Update profile with username
+                console.log('Updating user profile...');
+                await user.updateProfile({ displayName: username });
+                console.log('Profile updated successfully');
+                
+                // Ensure user is fully authenticated and get fresh token
+                console.log('Getting fresh auth token...');
+                const freshToken = await user.getIdToken(true); // Force refresh
+                console.log('Fresh token obtained, user fully authenticated');
+                
+                // Small delay to ensure auth state propagation
+                await new Promise(resolve => setTimeout(resolve, 100));
+                console.log('Auth state propagation delay complete');
+                
+                // Store user data
+                console.log('Storing user data in Firestore...');
+                await db.collection('users').doc(user.uid).set({
+                    username: username,
+                    email: email,
+                    displayName: username,
+                    isGuest: false,
+                    isAnonymous: false,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    lastActive: firebase.firestore.FieldValue.serverTimestamp(),
+                    gamesPlayed: 0,
+                    wins: 0,
+                    losses: 0,
+                    level: 1,
+                    xp: 0
+                });
+                console.log('User data stored successfully');
+                
+                // Reserve username
+                console.log('Reserving username in Firestore...');
+                await db.collection('usernames').doc(username.toLowerCase()).set({
+                    uid: user.uid,
+                    username: username,
+                    reservedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                console.log('Username reserved successfully');
+                
+                currentUser = {
+                    uid: user.uid,
+                    email: user.email,
+                    displayName: username,
+                    isGuest: false,
+                    isAnonymous: false
+                };
+                
+                // Get Firebase ID token for server authentication
+                authToken = await user.getIdToken();
+                
+                console.log('Registration successful:', user.uid);
+                showMessage(`Welcome ${username}! Account created successfully.`, 'success');
+                updateUserInfo(username, false);
+                
+                // Reconnect socket with auth token
+                await reconnectSocketWithAuth();
+                
+                showMainMenu();
+                
+            } catch (error) {
+                console.error('Registration error:', error);
+                showMessage('Registration failed: ' + error.message, 'error');
+            }
+        }
+        
+        // Send auth token to server after authentication
+        async function reconnectSocketWithAuth() {
+            if (!authToken) {
+                console.log('No auth token available');
+                return;
+            }
+            
+            if (!socket || !socket.connected) {
+                console.log('Socket not connected, waiting...');
+                return;
+            }
+            
+            console.log('Sending auth token to server...');
+            
+            // Send auth token to server for authentication
+            socket.emit('authenticate', { token: authToken }, (response) => {
+                if (response && response.success) {
+                    console.log('Server authentication successful:', response.user);
+                } else {
+                    console.error('Server authentication failed:', response?.error || 'Unknown error');
+                }
+            });
+        }
+        
+        // Send authentication to server (synchronous version for room operations)
+        async function sendAuthToServer() {
+            if (!authToken) {
+                console.log('No auth token available');
+                return false;
+            }
+            
+            if (!socket || !socket.connected) {
+                console.log('Socket not connected');
+                return false;
+            }
+            
+            return new Promise((resolve) => {
+                console.log('Sending auth token to server...');
+                socket.emit('authenticate', { token: authToken }, (response) => {
+                    if (response && response.success) {
+                        console.log('Authentication successful with server');
+                        resolve(true);
+                    } else {
+                        console.error('Authentication failed with server:', response?.error);
+                        resolve(false);
+                    }
+                });
+            });
+        }
+        
+        // Utility functions for user info and sign-out
+        function updateUserInfo(displayName, isGuest) {
+            const userInfoDiv = document.getElementById('authenticated-user-info');
+            if (userInfoDiv) {
+                const userType = isGuest ? 'Guest Player' : 'Registered Player';
+                const icon = isGuest ? '🎮' : '👤';
+                userInfoDiv.innerHTML = `
+                    ${icon} ${userType}: <strong>${displayName}</strong><br>
+                    <a href="#" id="sign-out-link" style="color: #888; text-decoration: underline; font-size: 12px; cursor: pointer;">sign out</a>
+                `;
+                
+                // Re-attach event listener to the new sign-out link
+                const signOutLink = document.getElementById('sign-out-link');
+                if (signOutLink) {
+                    signOutLink.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        handleSignOut();
+                    });
+                }
+            }
+        }
+        
+        async function handleSignOut() {
+            try {
+                await auth.signOut();
+                currentUser = null;
+                authToken = null;
+                
+                // Clear localStorage
+                localStorage.removeItem('guestDisplayName');
+                localStorage.removeItem('guestUserId');
+                
+                showMessage('Signed out successfully', 'success');
+                
+                // Clear user info first
+                const userInfoDiv = document.getElementById('authenticated-user-info');
+                if (userInfoDiv) {
+                    userInfoDiv.innerHTML = '';
+                }
+                
+                showAuthSection();
+                
+            } catch (error) {
+                console.error('Sign out error:', error);
+                showMessage('Failed to sign out: ' + error.message, 'error');
+            }
+        }
+        
+        // Listen for auth state changes
+        auth.onAuthStateChanged((user) => {
+            if (user && !currentUser) {
+                // User is signed in but we haven't set currentUser yet
+                // This happens on page refresh
+                console.log('User found on auth state change:', user.uid);
+                
+                currentUser = {
+                    uid: user.uid,
+                    email: user.email,
+                    displayName: user.displayName,
+                    isGuest: user.isAnonymous,
+                    isAnonymous: user.isAnonymous
+                };
+                
+                if (user.isAnonymous) {
+                    const savedName = localStorage.getItem('guestDisplayName');
+                    if (savedName) {
+                        currentUser.displayName = savedName;
+                    }
+                }
+                
+                user.getIdToken().then(token => {
+                    authToken = token;
+                });
+                
+                // Update user info before showing main menu
+                const displayName = currentUser.displayName || currentUser.email || 'User';
+                updateUserInfo(displayName, currentUser.isGuest);
+                showMainMenu();
+            } else if (!user && currentUser) {
+                // User signed out
+                currentUser = null;
+                authToken = null;
+                showAuthSection();
+            }
+        });
+        
+        // ==================== END FIREBASE AUTHENTICATION ====================
+
         // Phaser game configuration
         const config = {
             type: Phaser.AUTO,
@@ -623,21 +1185,31 @@
             }, duration);
         }
         
-        function showMainMenu() {
-            mainMenu.style.display = 'block';
-            roomLobby.style.display = 'none';
-            roomUI.classList.remove('hidden');
-            gameStarted = false;
-        }
+        // showMainMenu function is now consolidated in the auth section above
         
         function showRoomLobby(roomCode, hostStatus) {
-            mainMenu.style.display = 'none';
-            roomLobby.style.display = 'block';
+            // Hide all authentication sections completely
+            const authSectionEl = document.getElementById('auth-section');
+            const loginFormEl = document.getElementById('login-form');
+            const registerFormEl = document.getElementById('register-form');
+            const mainMenuEl = document.getElementById('main-menu');
+            const roomLobbyEl = document.getElementById('room-lobby');
+            
+            if (authSectionEl) authSectionEl.style.setProperty('display', 'none', 'important');
+            if (loginFormEl) loginFormEl.style.setProperty('display', 'none', 'important');
+            if (registerFormEl) registerFormEl.style.setProperty('display', 'none', 'important');
+            
+            // Hide main menu and show room lobby
+            if (mainMenuEl) mainMenuEl.style.setProperty('display', 'none', 'important');
+            if (roomLobbyEl) roomLobbyEl.style.setProperty('display', 'block', 'important');
+            
             roomCodeDisplay.textContent = roomCode;
             isHost = hostStatus;
             
             // Show start button only for host
             startGameBtn.style.display = isHost ? 'block' : 'none';
+            
+            console.log('Showing room lobby for room:', roomCode);
         }
         
         function hideRoomUI() {
@@ -671,10 +1243,16 @@
             }
         }
         
-        function createRoom() {
+        async function createRoom() {
             if (!socket) {
                 showMessage('Not connected to server', 'error');
                 return;
+            }
+            
+            // Ensure authentication before creating room
+            if (authToken) {
+                console.log('Ensuring authentication before creating room...');
+                await sendAuthToServer();
             }
             
             createRoomBtn.disabled = true;
@@ -706,7 +1284,7 @@
             });
         }
         
-        function joinRoom() {
+        async function joinRoom() {
             const roomCode = roomCodeInput.value.trim().toUpperCase();
             
             if (!roomCode || roomCode.length !== 4) {
@@ -717,6 +1295,12 @@
             if (!socket) {
                 showMessage('Not connected to server', 'error');
                 return;
+            }
+            
+            // Ensure authentication before joining room
+            if (authToken) {
+                console.log('Ensuring authentication before joining room...');
+                await sendAuthToServer();
             }
             
             joinRoomBtn.disabled = true;
@@ -951,7 +1535,12 @@
                 updateDebugPanel();
             });
             
-            socket = io();
+            // Initialize socket connection with auth token
+            socket = io({
+                auth: {
+                    token: authToken
+                }
+            });
             myPlayerId = socket.id;
             
             socket.on('gameState', (newGameState) => {
@@ -1016,7 +1605,8 @@
             // Listen for new players joining the room
             socket.on('playerJoinedRoom', (event) => {
                 if (currentRoom) {
-                    showMessage(`Player joined the room (${event.playerCount}/8)`, 'success');
+                    const playerName = event.playerName || `Player ${event.socketId.substring(0, 8)}...`;
+                    showMessage(`${playerName} joined the room (${event.playerCount}/8)`, 'success');
                     
                     // Request updated room info
                     socket.emit('getRoomInfo', (roomInfo) => {

@@ -1,14 +1,91 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const cors = require('cors');
 const platformConfig = require('./public/platforms.js');
 
 // Import Firebase authentication
 const { serverAuthManager, socketAuthMiddleware } = require('./firebase-admin.js');
 
+// Environment validation for critical variables
+const requiredEnvVars = ['JWT_SECRET'];
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+
+if (missingVars.length > 0) {
+    console.error('Missing required environment variables:', missingVars);
+    console.error('Please copy environment.template to .env and configure the required values');
+    process.exit(1);
+}
+
+// Environment-based logging
+const isDevelopment = process.env.NODE_ENV !== 'production';
+const log = {
+    info: (...args) => isDevelopment && console.log('[INFO]', ...args),
+    warn: (...args) => isDevelopment && console.warn('[WARN]', ...args),
+    error: (...args) => console.error('[ERROR]', ...args), // Always log errors
+    debug: (...args) => process.env.DEBUG === 'true' && console.log('[DEBUG]', ...args)
+};
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
+
+// Security middleware
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: [
+                "'self'", 
+                "'unsafe-inline'", 
+                "https://www.gstatic.com", 
+                "https://www.googleapis.com",
+                "https://cdn.socket.io",           // Socket.IO CDN
+                "https://cdn.jsdelivr.net"        // Phaser.js CDN
+            ],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            fontSrc: [
+                "'self'", 
+                "https://fonts.gstatic.com",
+                "data:"                           // Allow data URI fonts (Phaser uses these)
+            ],
+            imgSrc: ["'self'", "data:", "https:"],
+            connectSrc: [
+                "'self'", 
+                "ws:", 
+                "wss:", 
+                "https://identitytoolkit.googleapis.com", 
+                "https://securetoken.googleapis.com"
+            ]
+        }
+    }
+}));
+
+// CORS configuration
+const allowedOrigins = process.env.NODE_ENV === 'production' 
+    ? (process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : ['https://yourdomain.com'])
+    : ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:8080', 'http://127.0.0.1:8080'];
+
+app.use(cors({
+    origin: allowedOrigins,
+    credentials: true
+}));
+
+// Rate limiting
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs
+    message: 'Too many requests from this IP, please try again later.',
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+app.use(limiter);
+
+// Body parsing with size limits
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use(express.static('public')); // Serve index.html from 'public' directory
 

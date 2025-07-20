@@ -610,6 +610,33 @@
         const loginForm = document.getElementById('login-form');
         const registerForm = document.getElementById('register-form');
         
+        // Room management variables (moved up to avoid initialization errors)
+        let currentRoom = null;
+        let isHost = false;
+        let gameStarted = false;
+        
+        // Room UI Elements (moved up to avoid initialization errors)
+        const roomUI = document.getElementById('room-ui');
+        const mainMenu = document.getElementById('main-menu');
+        const roomLobby = document.getElementById('room-lobby');
+        const createRoomBtn = document.getElementById('create-room-btn');
+        const joinRoomBtn = document.getElementById('join-room-btn');
+        const roomCodeInput = document.getElementById('room-code-input');
+        const roomCodeDisplay = document.getElementById('room-code-display');
+        const playerList = document.getElementById('player-list');
+        const playerCount = document.getElementById('room-player-count');
+        const leaveRoomBtn = document.getElementById('leave-room-btn');
+        const startGameBtn = document.getElementById('start-game-btn');
+        const roomMessages = document.getElementById('room-messages');
+        
+        // Game Over UI Elements (moved up to avoid initialization errors)
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const winnerText = document.getElementById('winner-text');
+        const statsTable = document.getElementById('stats-table');
+        const statsTbody = document.getElementById('stats-tbody');
+        const rematchBtn = document.getElementById('rematch-btn');
+        const returnLobbyBtn = document.getElementById('return-lobby-btn');
+        
         // Authentication event handlers
         document.addEventListener('DOMContentLoaded', () => {
             setupAuthEventListeners();
@@ -1142,32 +1169,7 @@
 
         // ==================== ROOM MANAGEMENT SYSTEM ====================
         
-        // Room management variables
-        let currentRoom = null;
-        let isHost = false;
-        let gameStarted = false;
-        
-        // Room UI Elements
-        const roomUI = document.getElementById('room-ui');
-        const mainMenu = document.getElementById('main-menu');
-        const roomLobby = document.getElementById('room-lobby');
-        const createRoomBtn = document.getElementById('create-room-btn');
-        const joinRoomBtn = document.getElementById('join-room-btn');
-        const roomCodeInput = document.getElementById('room-code-input');
-        const roomCodeDisplay = document.getElementById('room-code-display');
-        const playerList = document.getElementById('player-list');
-        const playerCount = document.getElementById('room-player-count');
-        const leaveRoomBtn = document.getElementById('leave-room-btn');
-        const startGameBtn = document.getElementById('start-game-btn');
-        const roomMessages = document.getElementById('room-messages');
-        
-        // Game Over UI Elements
-        const gameOverScreen = document.getElementById('game-over-screen');
-        const winnerText = document.getElementById('winner-text');
-        const statsTable = document.getElementById('stats-table');
-        const statsTbody = document.getElementById('stats-tbody');
-        const rematchBtn = document.getElementById('rematch-btn');
-        const returnLobbyBtn = document.getElementById('return-lobby-btn');
+
         
         // Room management functions
         function showMessage(message, type = 'info', duration = 5000) {

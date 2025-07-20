@@ -78,3 +78,6 @@ docker-compose.override.yml
 .terraform/
 *.tfstate
 *.tfstate.backup
+
+# Docs
+SECURITY.md

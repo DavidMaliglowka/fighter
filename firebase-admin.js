@@ -46,7 +46,10 @@ const firestore = admin.firestore();
 // User management class for server-side operations
 class ServerAuthManager {
     constructor() {
-        this.jwtSecret = process.env.JWT_SECRET || 'your_super_secret_jwt_key_here';
+        this.jwtSecret = process.env.JWT_SECRET;
+        if (!this.jwtSecret) {
+            throw new Error('JWT_SECRET environment variable is required for security');
+        }
         this.isFirebaseAvailable = admin.apps.length > 0;
     }
 

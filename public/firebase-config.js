@@ -3,16 +3,31 @@
 
 // Using Firebase compat SDK (loaded via CDN)
 
-// Firebase configuration object
-// In production, these would come from environment variables
-const firebaseConfig = {
-    apiKey: "your_firebase_api_key_here",
-    authDomain: "your-project-id.firebaseapp.com", 
-    projectId: "your-project-id",
-    storageBucket: "your-project-id.appspot.com",
-    messagingSenderId: "your_sender_id_here",
-    appId: "your_app_id_here"
+// Environment-based logging for client-side
+const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const clientLog = {
+    info: (...args) => isDevelopment && console.log('[CLIENT-INFO]', ...args),
+    warn: (...args) => isDevelopment && console.warn('[CLIENT-WARN]', ...args),
+    error: (...args) => console.error('[CLIENT-ERROR]', ...args), // Always log errors
+    debug: (...args) => isDevelopment && console.log('[CLIENT-DEBUG]', ...args)
 };
+
+// Firebase configuration object
+// These values should be replaced with your actual Firebase project config
+// They are safe to expose in client-side code as they identify your Firebase project
+const firebaseConfig = {
+    apiKey: window.FIREBASE_CONFIG?.apiKey || "your_firebase_api_key_here",
+    authDomain: window.FIREBASE_CONFIG?.authDomain || "your-project-id.firebaseapp.com", 
+    projectId: window.FIREBASE_CONFIG?.projectId || "your-project-id",
+    storageBucket: window.FIREBASE_CONFIG?.storageBucket || "your-project-id.appspot.com",
+    messagingSenderId: window.FIREBASE_CONFIG?.messagingSenderId || "your_sender_id_here",
+    appId: window.FIREBASE_CONFIG?.appId || "your_app_id_here"
+};
+
+// Validate Firebase configuration
+if (firebaseConfig.apiKey === "your_firebase_api_key_here") {
+    clientLog.error("Firebase configuration not set. Please update firebase-config.js with your Firebase project details.");
+}
 
 // Initialize Firebase (compat SDK)
 firebase.initializeApp(firebaseConfig);
@@ -73,7 +88,7 @@ class AuthManager {
             localStorage.setItem('guestDisplayName', displayName);
             localStorage.setItem('guestUserId', user.uid);
             
-            console.log('Guest authentication successful:', user.uid);
+            clientLog.info('Guest authentication successful:', user.uid);
             return {
                 success: true,
                 user: {
@@ -84,7 +99,7 @@ class AuthManager {
                 }
             };
         } catch (error) {
-            console.error('Guest authentication error:', error);
+            clientLog.error('Guest authentication error:', error);
             return {
                 success: false,
                 error: error.message
@@ -103,7 +118,7 @@ class AuthManager {
                 lastActive: firebase.firestore.FieldValue.serverTimestamp()
             });
             
-            console.log('Email authentication successful:', user.uid);
+            clientLog.info('Email authentication successful:', user.uid);
             return {
                 success: true,
                 user: {
@@ -115,7 +130,7 @@ class AuthManager {
                 }
             };
         } catch (error) {
-            console.error('Email authentication error:', error);
+            clientLog.error('Email authentication error:', error);
             return {
                 success: false,
                 error: error.message
@@ -164,7 +179,7 @@ class AuthManager {
                 reservedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
             
-            console.log('Registration successful:', user.uid);
+            clientLog.info('Registration successful:', user.uid);
             return {
                 success: true,
                 user: {
@@ -176,7 +191,7 @@ class AuthManager {
                 }
             };
         } catch (error) {
-            console.error('Registration error:', error);
+            clientLog.error('Registration error:', error);
             return {
                 success: false,
                 error: error.message
@@ -193,10 +208,10 @@ class AuthManager {
             localStorage.removeItem('guestDisplayName');
             localStorage.removeItem('guestUserId');
             
-            console.log('User signed out successfully');
+            clientLog.info('User signed out successfully');
             return { success: true };
         } catch (error) {
-            console.error('Sign out error:', error);
+            clientLog.error('Sign out error:', error);
             return {
                 success: false,
                 error: error.message
@@ -257,7 +272,7 @@ class AuthManager {
                 localStorage.removeItem('guestDisplayName');
                 localStorage.removeItem('guestUserId');
                 
-                console.log('Account claimed successfully');
+                clientLog.info('Account claimed successfully');
                 return {
                     success: true,
                     message: 'Account claimed successfully! Your progress has been saved.'
@@ -266,7 +281,7 @@ class AuthManager {
             
             return registerResult;
         } catch (error) {
-            console.error('Account claiming error:', error);
+            clientLog.error('Account claiming error:', error);
             return {
                 success: false,
                 error: error.message

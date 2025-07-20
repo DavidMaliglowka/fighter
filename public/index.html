@@ -2245,22 +2245,19 @@
                 }
             }
             
-            // Movement prediction with improved accuracy
-            const moveSpeed = clientPlayerState.blocking ? 3 : 6; // Match server MOVEMENT_SPEED (1.5x faster)
+            // SIMPLIFIED: More conservative movement prediction
+            const moveSpeed = clientPlayerState.blocking ? 3 : 6; // Match server MOVEMENT_SPEED
             
-            // Better direction change handling - reset velocity first
-            let newVelocityX = 0;
-            
+            // Conservative movement handling to reduce divergence
             if (inputs.left) {
-                newVelocityX = -moveSpeed;
                 clientPlayerState.x -= moveSpeed;
+                clientPlayerState.velocityX = -moveSpeed;
             } else if (inputs.right) {
-                newVelocityX = moveSpeed;
                 clientPlayerState.x += moveSpeed;
+                clientPlayerState.velocityX = moveSpeed;
+            } else {
+                clientPlayerState.velocityX = 0;
             }
-            
-            // Immediately update velocity to match server behavior
-            clientPlayerState.velocityX = newVelocityX;
             
             // Jump prediction with exact server matching
             if (inputs.jump && validateClientJump(now)) {
@@ -2409,7 +2406,7 @@
                 updateLocalPlayerHealthBar();
             }
             
-            console.log(`Client predicted dash ${direction} with velocity ${clientPlayerState.dashVelocity}`);
+            // Reduced logging for dash prediction
         }
         
         function bufferInput(inputs) {
@@ -2431,80 +2428,86 @@
             const serverPlayer = serverState.players[myPlayerId];
             if (!serverPlayer) return;
             
+            // Handle edge cases: player death, elimination, or major state changes
+            if (serverPlayer.isDead || serverPlayer.eliminated || serverPlayer.health <= 0) {
+                // Force sync to server state for edge cases to prevent large errors
+                clientPlayerState.x = serverPlayer.x;
+                clientPlayerState.y = serverPlayer.y;
+                clientPlayerState.velocityX = serverPlayer.velocityX || 0;
+                clientPlayerState.velocityY = serverPlayer.velocityY || 0;
+                clientPlayerState.isGrounded = serverPlayer.isGrounded;
+                clientPlayerState.jumpsRemaining = serverPlayer.jumpsRemaining;
+                clientPlayerState.health = serverPlayer.health;
+                
+                if (playerSprites[myPlayerId]) {
+                    playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y);
+                    updateLocalPlayerHealthBar();
+                }
+                
+                lastServerUpdate = Date.now();
+                updateDebugPanel();
+                return;
+            }
+            
             // Calculate position difference
             const positionError = Math.sqrt(
                 Math.pow(clientPlayerState.x - serverPlayer.x, 2) + 
                 Math.pow(clientPlayerState.y - serverPlayer.y, 2)
             );
             
-            // Calculate velocity difference for better correction
-            const serverVelX = serverPlayer.velocityX || 0;
-            const serverVelY = serverPlayer.velocityY || 0;
-            const velocityError = Math.sqrt(
-                Math.pow(clientPlayerState.velocityX - serverVelX, 2) + 
-                Math.pow(clientPlayerState.velocityY - serverVelY, 2)
-            );
+            // SIMPLIFIED: Much more conservative reconciliation for high latency
+            // Use larger error thresholds to prevent jitter
+            const ERROR_THRESHOLD = 50; // Generous threshold for 150ms latency
+            const LARGE_ERROR_THRESHOLD = 100; // Threshold for immediate correction
             
-            // HIGH LATENCY OPTIMIZED: More lenient thresholds for Germany→US latency (~150ms)
-            // Expect larger errors due to ~9 frames of network delay at 60fps
-            let errorThreshold = 25; // Much more lenient for high latency (was 8)
-            let velocityThreshold = 200; // Much more lenient (was 75)
+            // Conservative correction factors to prevent oscillation
+            let correctionFactor = 0.1; // Very gentle base correction
             
-            // Even more lenient when actively moving (network delay amplifies movement errors)
-            if (Math.abs(serverVelX) > 1) {
-                errorThreshold = 40; // Very lenient when moving horizontally (was 12)
-                velocityThreshold = 300; // Very lenient (was 150)
-            } else if (serverPlayer.isGrounded && Math.abs(serverVelX) < 1 && Math.abs(serverVelY) < 1) {
-                errorThreshold = 15; // Tighter when stationary (was 6)
-                velocityThreshold = 150; // Tighter (was 100)
+                         if (positionError > LARGE_ERROR_THRESHOLD) {
+                 // Large error - use moderate correction to avoid snapping
+                 correctionFactor = 0.3;
+                 // Only log extreme corrections to avoid spam
+                 if (positionError > 200) {
+                     console.log(`[PREDICTION] Extreme correction: ${positionError.toFixed(1)}px`);
+                 }
+             } else if (positionError > ERROR_THRESHOLD) {
+                // Medium error - gentle correction
+                correctionFactor = 0.15;
+            } else {
+                // Small error - no correction needed, let prediction run
+                correctionFactor = 0;
             }
             
-            // HIGH LATENCY OPTIMIZED: More aggressive correction for large errors
-            let correctionFactor = 0.15; // More aggressive base correction (was 0.05)
-            if (positionError > 60) {
-                correctionFactor = 0.8; // Very aggressive for massive errors (was 0.3)
-            } else if (positionError > 35) {
-                correctionFactor = 0.5; // Aggressive for large errors (was 0.15)
-            } else if (velocityError > velocityThreshold) {
-                correctionFactor = 0.25; // Moderate velocity-based correction (was 0.1)
-            }
-            
-            // Apply correction if error is significant
-            if (positionError > errorThreshold || velocityError > velocityThreshold) {
+            // Apply correction only if needed
+            if (correctionFactor > 0) {
                 // Smooth interpolation towards server position
                 clientPlayerState.x += (serverPlayer.x - clientPlayerState.x) * correctionFactor;
                 clientPlayerState.y += (serverPlayer.y - clientPlayerState.y) * correctionFactor;
                 
-                // Always sync velocities to prevent drift
-                clientPlayerState.velocityX = serverVelX;
-                clientPlayerState.velocityY = serverVelY;
-                
-                // Sync critical physics state
-                clientPlayerState.isGrounded = serverPlayer.isGrounded;
-                clientPlayerState.jumpsRemaining = serverPlayer.jumpsRemaining;
+                // Gentle velocity sync only for large errors
+                if (positionError > LARGE_ERROR_THRESHOLD) {
+                    clientPlayerState.velocityX = serverPlayer.velocityX || 0;
+                    clientPlayerState.velocityY = serverPlayer.velocityY || 0;
+                }
                 
                 // Apply corrected position to sprite
                 if (playerSprites[myPlayerId]) {
-                    playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y); // Add 200px offset
+                    playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y);
                     updateLocalPlayerHealthBar();
-                }
-                
-                // Log significant corrections for debugging
-                if (positionError > 50) {
-                    console.warn(`[PREDICTION] Large position correction: ${positionError.toFixed(1)}px error, ${correctionFactor.toFixed(2)} factor`);
                 }
             }
             
-            // Update non-predicted states
+            // Always sync critical non-position state
+            clientPlayerState.isGrounded = serverPlayer.isGrounded;
+            clientPlayerState.jumpsRemaining = serverPlayer.jumpsRemaining;
             clientPlayerState.health = serverPlayer.health;
-            lastServerUpdate = Date.now();
             
-            // Update debug panel
+            lastServerUpdate = Date.now();
             updateDebugPanel();
         }
         
         let lastDebugUpdate = 0;
-        const DEBUG_UPDATE_INTERVAL = 100; // Update debug panel only every 100ms
+        const DEBUG_UPDATE_INTERVAL = 200; // Update debug panel only every 200ms for better performance
         
         function updateDebugPanel() {
             const now = Date.now();

@@ -1230,9 +1230,9 @@ function updatePhysics() {
         const groundState = getPlayerGroundState(player, player.droppingFromPlatform);
         
         if (groundState.isGrounded) {
-            // Only log significant state changes or initial landings
-            if (!player.isGrounded && Math.abs(player.y - groundState.groundY) > 5) {
-                console.log(`Player ${playerId} landed on ${groundState.platform?.id || 'ground'} at y=${groundState.groundY}`);
+            // Reduced logging - only log major platform changes
+            if (!player.isGrounded && Math.abs(player.y - groundState.groundY) > 20) {
+                console.log(`Player ${playerId} landed on ${groundState.platform?.id || 'ground'}`);
             }
             
             player.y = groundState.groundY;
@@ -2188,8 +2188,8 @@ io.on('connection', (socket) => {
     });
 });
 
-// Game loop - ADAPTIVE TICK RATE (optimized for high latency)
-let currentTickRate = 30; // Start with 30fps instead of 60fps
+// Game loop - FIXED TICK RATE (optimized for high latency)
+let currentTickRate = 30; // Fixed 30fps for network stability
 let performanceStats = {
     avgExecutionTime: 0,
     lastMeasurement: Date.now(),
@@ -2204,19 +2204,12 @@ function measureGameLoopPerformance(executionTime) {
     performanceStats.avgExecutionTime = 
         (performanceStats.avgExecutionTime * (performanceStats.sampleCount - 1) + executionTime) / performanceStats.sampleCount;
     
-    // Adapt tick rate based on performance every 60 samples (~2 seconds)
-    if (performanceStats.sampleCount % 60 === 0) {
+    // Only log performance every 300 samples (~10 seconds)
+    if (performanceStats.sampleCount % 300 === 0) {
         const totalRooms = rooms.size;
         const totalActivePlayers = Array.from(rooms.values()).reduce((sum, room) => sum + room.players.size, 0);
         
-        // Increase tick rate for low latency, decrease for high load
-        if (performanceStats.avgExecutionTime < 5 && totalActivePlayers < 16) {
-            currentTickRate = Math.min(45, currentTickRate + 5); // Max 45fps for VPS
-        } else if (performanceStats.avgExecutionTime > 15 || totalActivePlayers > 24) {
-            currentTickRate = Math.max(20, currentTickRate - 5); // Min 20fps
-        }
-        
-        console.log(`[PERF] Tick rate: ${currentTickRate}fps | Avg exec: ${performanceStats.avgExecutionTime.toFixed(1)}ms | Players: ${totalActivePlayers} | Rooms: ${totalRooms}`);
+        console.log(`[PERF] Fixed tick rate: ${currentTickRate}fps | Avg exec: ${performanceStats.avgExecutionTime.toFixed(1)}ms | Players: ${totalActivePlayers} | Rooms: ${totalRooms}`);
         
         // Reset stats
         performanceStats.avgExecutionTime = 0;
@@ -2224,7 +2217,7 @@ function measureGameLoopPerformance(executionTime) {
     }
 }
 
-// Optimized game loop with performance monitoring
+// Simplified game loop with consistent timing
 function runGameLoop() {
     const startTime = Date.now();
     
@@ -2265,11 +2258,11 @@ function runGameLoop() {
     const executionTime = Date.now() - startTime;
     measureGameLoopPerformance(executionTime);
     
-    // Schedule next iteration with adaptive timing
+    // Fixed timing for consistent network behavior
     setTimeout(runGameLoop, 1000 / currentTickRate);
 }
 
-// Start the adaptive game loop
+// Start the fixed game loop
 runGameLoop();
 
 const PORT = process.env.PORT || 3000;

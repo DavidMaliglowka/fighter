@@ -57,7 +57,9 @@ app.use(helmet({
                 "ws:", 
                 "wss:", 
                 "https://identitytoolkit.googleapis.com", 
-                "https://securetoken.googleapis.com"
+                "https://securetoken.googleapis.com",
+                "https://firestore.googleapis.com",        // Firestore database connections
+                "https://firebaseinstallations.googleapis.com" // Firebase installations
             ]
         }
     }
@@ -86,6 +88,46 @@ app.use(limiter);
 // Body parsing with size limits
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Firebase configuration endpoint - serves config from environment variables
+app.get('/firebase-config', (req, res) => {
+    // Only require the essential variables we actually need
+    const requiredFirebaseVars = [
+        'FIREBASE_PROJECT_ID'  // Only this is truly required, others have fallbacks
+    ];
+    
+    const missingFirebaseVars = requiredFirebaseVars.filter(varName => !process.env[varName]);
+    
+    // Debug logging for development
+    log.info('Firebase config request received');
+    log.info('Environment variables check:', {
+        NODE_ENV: process.env.NODE_ENV,
+        hasFirebaseProjectId: !!process.env.FIREBASE_PROJECT_ID,
+        hasFirebaseApiKey: !!process.env.FIREBASE_API_KEY,
+        usingFallbackApiKey: !process.env.FIREBASE_API_KEY
+    });
+    
+    if (missingFirebaseVars.length > 0) {
+        log.error('Missing Firebase environment variables:', missingFirebaseVars);
+        return res.status(500).json({ 
+            error: 'Firebase configuration incomplete',
+            missing: missingFirebaseVars 
+        });
+    }
+    
+    // Return Firebase config using actual working values with fallbacks for local dev
+    const firebaseConfig = {
+        apiKey: process.env.FIREBASE_API_KEY || "AIzaSyAh2m1SciisBB6EDxmShQJyxW1uAp0Z32I",
+        authDomain: `${process.env.FIREBASE_PROJECT_ID}.firebaseapp.com`,
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        storageBucket: `${process.env.FIREBASE_PROJECT_ID}.firebasestorage.app`,
+        messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "799099672774",
+        appId: process.env.FIREBASE_APP_ID || "1:799099672774:web:8e080095ca01c28a1cdfc7"
+    };
+    
+    log.info('Returning Firebase config successfully');
+    res.json(firebaseConfig);
+});
 
 app.use(express.static('public')); // Serve index.html from 'public' directory
 

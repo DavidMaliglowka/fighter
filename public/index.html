@@ -1120,6 +1120,10 @@
             height: 1000, // Expanded from 600 to allow fall recovery attempts
             parent: 'game-container',
             backgroundColor: '#2c5f2d',
+            fps: {
+                target: 30,
+                forceSetTimeOut: true
+            },
             physics: {
                 default: 'arcade',
                 arcade: {
@@ -2089,7 +2093,8 @@
 
 
 
-        function update() {
+        function update(time, delta) {
+            const deltaTime = delta / 1000; // 0.0333 seconds every tick when fps.target is 30
             const currentTime = Date.now();
             
             // Dash input detection system
@@ -2097,7 +2102,7 @@
             
             // Update dash input cooldown
             if (dashInputCooldown > 0) {
-                dashInputCooldown -= 16.67; // Approximate frame time (60fps)
+                dashInputCooldown -= delta; // Use the real frame time
             }
             
             // Check for dedicated dash key (Shift) + direction
@@ -2150,7 +2155,7 @@
                 }
                 
                 // Apply inputs immediately on client for responsiveness
-                applyClientSidePrediction(inputs);
+                applyClientSidePrediction(inputs, deltaTime);
                 
                 // Buffer input for server reconciliation
                 bufferInput(inputs);
@@ -2239,11 +2244,14 @@
                     const platformTop = platform.y - platform.height / 2;
                     const playerBottom = player.y + 30; // Player height/2 = 30px (exact server match)
                     
-                    // Check if player is close enough to platform top (exact server tolerance)
+                    // MORE GENEROUS LANDING DETECTION: Increased tolerance and added velocity check
                     const distanceToTop = playerBottom - platformTop;
-                    const isNearPlatform = distanceToTop >= -20 && distanceToTop <= 20; // 20px tolerance
+                    const isNearPlatform = distanceToTop >= -25 && distanceToTop <= 25; // INCREASED from 20 to 25px tolerance
                     
-                    if (isNearPlatform && player.velocityY >= 0) {
+                    // IMPROVED: Also check if player is moving downward or stationary for landing
+                    const isLandingCondition = player.velocityY >= -50; // Allow slight upward velocity for landing
+                    
+                    if (isNearPlatform && isLandingCondition) {
                         // For one-way platforms, handle dropping logic
                         if (platform.type === PLATFORM_TYPES.ONE_WAY) {
                             // Skip collision if ignoring one-way or actively dropping
@@ -2251,7 +2259,8 @@
                                 continue;
                             }
                             
-                            if (player.y < platformTop) { // Player center is above platform top
+                            // MORE GENEROUS: Allow landing even if player center is slightly below platform
+                            if (player.y <= platformTop + 15) { // INCREASED from just "< platformTop" to allow 15px below
                                 isGrounded = true;
                                 groundY = PlatformUtils.getPlayerStandingY(platform);
                                 landedPlatform = platform;
@@ -2271,9 +2280,8 @@
             return { isGrounded, groundY, platform: landedPlatform };
         }
  
-        function applyClientSidePrediction(inputs) {
+        function applyClientSidePrediction(inputs, deltaTime) {
             // Use FIXED timestep to match server exactly (crucial for multiplayer sync)
-            const deltaTime = 1 / PHYSICS_CONSTANTS.FRAME_RATE; // Fixed 1/60 = 0.0167s
             const now = Date.now();
             
             // Log initial state for debugging
@@ -2534,16 +2542,31 @@
                 console.log(`[POSITION DEBUG] Total Error: ${positionError.toFixed(1)}px | X diff: ${xDiff.toFixed(1)}px | Y diff: ${yDiff.toFixed(1)}px | Client: (${clientPlayerState.x.toFixed(1)}, ${clientPlayerState.y.toFixed(1)}) | Server: (${serverPlayer.x.toFixed(1)}, ${serverPlayer.y.toFixed(1)})`);
             }
             
-            // DEAD ZONE: Ignore small errors to prevent micro-jitter
-            const DEAD_ZONE = 5; // REDUCED from 12 to catch more issues
-            const ERROR_THRESHOLD = 20; // REDUCED from 30
-            const LARGE_ERROR_THRESHOLD = 50; // REDUCED from 70
+            // JUMP STATE ANALYSIS: Detect if we're in a jump scenario
+            const now = Date.now();
+            const recentJump = (now - clientPlayerState.lastJumpTime) < 800; // 800ms jump window
+            const isClientAirborne = !clientPlayerState.isGrounded && clientPlayerState.velocityY < 100;
+            const isServerGrounded = serverPlayer.isGrounded;
+            const jumpDisagreement = isClientAirborne && isServerGrounded && recentJump;
+            
+            // LATENCY-AWARE THRESHOLDS: Adjust based on measured latency
+            const latencyElement = document.getElementById('latency');
+            const currentLatency = latencyElement ? parseInt(latencyElement.textContent) : 100;
+            const latencyMultiplier = Math.max(1, currentLatency / 50); // Scale thresholds based on latency
+            
+            const DEAD_ZONE = Math.min(8 * latencyMultiplier, 15); // Scale with latency, max 15px
+            const ERROR_THRESHOLD = Math.min(25 * latencyMultiplier, 40); // Scale with latency, max 40px
+            const LARGE_ERROR_THRESHOLD = Math.min(60 * latencyMultiplier, 100); // Scale with latency, max 100px
             
             let correctionApplied = false;
             
             if (positionError < DEAD_ZONE) {
                 // Within dead zone - no correction needed
                 correctionApplied = false;
+            } else if (jumpDisagreement && yDiff > 20) {
+                // JUMP JITTER PREVENTION: During jump disagreements, be very conservative
+                console.log(`[JUMP RECONCILE] Jump disagreement detected - client airborne, server grounded. Delaying correction. Y diff: ${yDiff.toFixed(1)}px`);
+                correctionApplied = false; // Skip correction to prevent jitter
             } else {
                 // Extra conservative during active movement to prevent jitter
                 const isFalling = clientPlayerState.velocityY > 200 && !clientPlayerState.isGrounded;
@@ -2564,12 +2587,12 @@
             if (correctionApplied) {
                 if (positionError > LARGE_ERROR_THRESHOLD) {
                     // Large error - use gentle correction to avoid snapping
-                    correctionFactor = 0.3; // INCREASED from 0.2 for faster convergence
-                    console.log(`[PREDICTION] Large correction applied: ${positionError.toFixed(1)}px with factor ${correctionFactor}`);
+                    correctionFactor = jumpDisagreement ? 0.1 : 0.3; // Much gentler during jump disagreements
+                    console.log(`[PREDICTION] Large correction applied: ${positionError.toFixed(1)}px with factor ${correctionFactor} (jump disagreement: ${jumpDisagreement})`);
                 } else if (positionError > ERROR_THRESHOLD) {
                     // Medium error - very gentle correction
-                    correctionFactor = 0.15; // INCREASED from 0.08
-                    console.log(`[PREDICTION] Medium correction applied: ${positionError.toFixed(1)}px with factor ${correctionFactor}`);
+                    correctionFactor = jumpDisagreement ? 0.05 : 0.15; // Much gentler during jump disagreements
+                    console.log(`[PREDICTION] Medium correction applied: ${positionError.toFixed(1)}px with factor ${correctionFactor} (jump disagreement: ${jumpDisagreement})`);
                 }
             }
             
@@ -2585,8 +2608,8 @@
                 
                 console.log(`[CORRECTION] Applied: (${oldX.toFixed(1)}, ${oldY.toFixed(1)}) -> (${clientPlayerState.x.toFixed(1)}, ${clientPlayerState.y.toFixed(1)})`);
                 
-                // Gentle velocity sync only for large errors
-                if (positionError > LARGE_ERROR_THRESHOLD) {
+                // Gentle velocity sync only for large errors and no jump disagreement
+                if (positionError > LARGE_ERROR_THRESHOLD && !jumpDisagreement) {
                     clientPlayerState.velocityX = serverPlayer.velocityX || 0;
                     clientPlayerState.velocityY = serverPlayer.velocityY || 0;
                 }
@@ -2605,11 +2628,29 @@
                 }
             }
             
-            // Always sync critical non-position state (but be conservative about grounded state during prediction)
-            if (positionError > ERROR_THRESHOLD || Math.abs(clientPlayerState.y - serverPlayer.y) > 20) {
-                // Only override grounded state if there's significant disagreement
-                clientPlayerState.isGrounded = serverPlayer.isGrounded;
+            // IMPROVED GROUND STATE SYNC: Be more conservative about overriding grounded state
+            const groundStateDisagreement = clientPlayerState.isGrounded !== serverPlayer.isGrounded;
+            
+            if (groundStateDisagreement) {
+                if (serverPlayer.isGrounded && !clientPlayerState.isGrounded) {
+                    // Server says grounded, client says airborne
+                    if (!recentJump || yDiff < 15) {
+                        // Only sync if no recent jump OR very small Y difference
+                        console.log(`[GROUND SYNC] Server says grounded, syncing client (recentJump: ${recentJump}, yDiff: ${yDiff.toFixed(1)})`);
+                        clientPlayerState.isGrounded = true;
+                        clientPlayerState.jumpsRemaining = 2;
+                        clientPlayerState.velocityY = 0;
+                    } else {
+                        console.log(`[GROUND SYNC] Skipping ground sync due to recent jump (${(now - clientPlayerState.lastJumpTime)}ms ago)`);
+                    }
+                } else if (!serverPlayer.isGrounded && clientPlayerState.isGrounded) {
+                    // Server says airborne, client says grounded - trust server immediately
+                    console.log(`[GROUND SYNC] Server says airborne, syncing client`);
+                    clientPlayerState.isGrounded = false;
+                }
             }
+            
+            // Always sync other critical state
             clientPlayerState.jumpsRemaining = serverPlayer.jumpsRemaining;
             clientPlayerState.health = serverPlayer.health;
             
@@ -2620,6 +2661,9 @@
                     if (positionError < DEAD_ZONE) {
                         correctionStatusEl.textContent = '(dead zone)';
                         correctionStatusEl.style.color = '#66ff66';
+                    } else if (jumpDisagreement) {
+                        correctionStatusEl.textContent = '(jump delay)';
+                        correctionStatusEl.style.color = '#ffff00';
                     } else {
                         correctionStatusEl.textContent = '(skipped)';
                         correctionStatusEl.style.color = '#ffff66';

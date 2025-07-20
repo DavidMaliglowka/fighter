@@ -139,7 +139,7 @@ const players = {};
 // Game constants
 const ATTACK_RANGE = 70;
 const ATTACK_DAMAGE = 15;
-const MOVEMENT_SPEED = 6; // Increased by 1.5x for more responsive movement
+const MOVEMENT_SPEED = 4; // Increased by 1.5x for more responsive movement
 const GRAVITY = 1200; // Increased for snappier falls
 const GROUND_Y = 560; // Ground level (600 - 40 for ground height)
 const FRAME_RATE = 30; // Match actual tick rate for consistency

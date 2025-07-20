@@ -6,6 +6,9 @@ const rateLimit = require('express-rate-limit');
 const cors = require('cors');
 const platformConfig = require('./public/platforms.js');
 
+// Load environment variables
+require('dotenv').config();
+
 // Import Firebase authentication
 const { serverAuthManager, socketAuthMiddleware } = require('./firebase-admin.js');
 

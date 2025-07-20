@@ -1533,6 +1533,11 @@
                 if (!predictionEnabled) {
                     clientPlayerState = null; // Reset client state
                     console.log('Client state reset - prediction disabled');
+                    // Force sprite to server position
+                    if (myPlayerId && playerSprites[myPlayerId] && gameState.players[myPlayerId]) {
+                        const serverPlayer = gameState.players[myPlayerId];
+                        playerSprites[myPlayerId].setPosition(serverPlayer.x + 200, serverPlayer.y);
+                    }
                 } else {
                     console.log('Prediction enabled - client state will reinitialize');
                 }
@@ -1929,10 +1934,14 @@
                     playerAttackEffects[id] = this.add.circle(player.x + 200, player.y, 35, 0xffff00, 0.6);
                     playerAttackEffects[id].setVisible(false);
                 } else {
-                    // Update existing sprite position (server handles physics)
-                    // Skip position update for local player if prediction is enabled
-                    if (!(predictionEnabled && id === myPlayerId)) {
-                        playerSprites[id].setPosition(player.x + 200, player.y); // Add 200px offset
+                    // Update existing sprite position
+                    // For local player: only use server position if prediction is disabled
+                    if (id === myPlayerId && predictionEnabled && clientPlayerState) {
+                        // Use predicted position for local player
+                        playerSprites[id].setPosition(clientPlayerState.x + 200, clientPlayerState.y);
+                    } else {
+                        // Use server position for other players or when prediction is off
+                        playerSprites[id].setPosition(player.x + 200, player.y);
                     }
                     
                     // Update player color based on state
@@ -1958,10 +1967,10 @@
                     playerSprites[id].setAlpha(playerAlpha);
                     
                     // Update health bar position and fill
-                    // Use predicted position for local player, server position for others
-                    const healthBarX = (predictionEnabled && id === myPlayerId && clientPlayerState) ? 
-                        clientPlayerState.x + 200 : player.x + 200; // Add 200px offset
-                    const healthBarY = (predictionEnabled && id === myPlayerId && clientPlayerState) ? 
+                    // Keep health bar position consistent with sprite position
+                    const healthBarX = (id === myPlayerId && predictionEnabled && clientPlayerState) ? 
+                        clientPlayerState.x + 200 : player.x + 200;
+                    const healthBarY = (id === myPlayerId && predictionEnabled && clientPlayerState) ? 
                         clientPlayerState.y - 40 : player.y - 40;
                     
                     playerHealthBars[id].background.x = healthBarX;
@@ -2168,55 +2177,53 @@
         }
 
         function getClientGroundState(player, ignoreOneWay) {
-            const { PLATFORMS, PLATFORM_TYPES, PLATFORM_PHYSICS, PlatformUtils } = window.PlatformConfig;
+            const { PLATFORMS, PLATFORM_TYPES, PlatformUtils } = window.PlatformConfig;
 
             let isGrounded = false;
-            let groundY = PHYSICS_CONSTANTS.GROUND_Y; // default ground level
+            let groundY = PHYSICS_CONSTANTS.GROUND_Y;
             let landedPlatform = null;
 
-            const halfPlayerHeight = PLATFORM_PHYSICS.PLAYER_HEIGHT / 2;
-
+            // EXACT SERVER MATCH: Use the same collision logic as server
             for (const platform of PLATFORMS) {
                 const playerBounds = PlatformUtils.getPlayerBounds(player);
                 const platformBounds = PlatformUtils.getPlatformBounds(platform);
-
-                // Horizontal overlap check
-                const horizontallyOverlapping = playerBounds.left < platformBounds.right &&
-                                                playerBounds.right > platformBounds.left;
-                if (!horizontallyOverlapping) continue;
-
-                const platformTop = platform.y - platform.height / 2;
-                const playerBottom = player.y + halfPlayerHeight;
-                const distToTop = playerBottom - platformTop;
-
-                // Within landing tolerance and falling/downwards movement
-                const nearPlatform = distToTop >= -20 && distToTop <= 20;
-
-                if (nearPlatform && player.velocityY >= 0) {
-                    if (platform.type === PLATFORM_TYPES.ONE_WAY) {
-                        // Ignore collision while dropping through
-                        if (ignoreOneWay || isDroppingThrough()) {
-                            continue;
-                        }
-                        // Can only land if coming from above the platform
-                        if (player.y < platformTop) {
+                
+                // Check if player is horizontally aligned with platform (exact server logic)
+                const isHorizontallyOverlapping = playerBounds.left < platformBounds.right && 
+                                                 playerBounds.right > platformBounds.left;
+                
+                if (isHorizontallyOverlapping) {
+                    const platformTop = platform.y - platform.height / 2;
+                    const playerBottom = player.y + 30; // Player height/2 = 30px (exact server match)
+                    
+                    // Check if player is close enough to platform top (exact server tolerance)
+                    const distanceToTop = playerBottom - platformTop;
+                    const isNearPlatform = distanceToTop >= -20 && distanceToTop <= 20; // 20px tolerance
+                    
+                    if (isNearPlatform && player.velocityY >= 0) {
+                        // For one-way platforms, handle dropping logic
+                        if (platform.type === PLATFORM_TYPES.ONE_WAY) {
+                            // Skip collision if ignoring one-way or actively dropping
+                            if (ignoreOneWay || isDroppingThrough()) {
+                                continue;
+                            }
+                            
+                            if (player.y < platformTop) { // Player center is above platform top
+                                isGrounded = true;
+                                groundY = PlatformUtils.getPlayerStandingY(platform);
+                                landedPlatform = platform;
+                                break;
+                            }
+                        } else {
+                            // Solid platforms - can land from any direction (exact server logic)
                             isGrounded = true;
                             groundY = PlatformUtils.getPlayerStandingY(platform);
                             landedPlatform = platform;
                             break;
                         }
-                    } else {
-                        // SOLID / SPAWN platforms – collide from any direction (primarily above)
-                        isGrounded = true;
-                        groundY = PlatformUtils.getPlayerStandingY(platform);
-                        landedPlatform = platform;
-                        break;
                     }
                 }
             }
-
-            // No hardcoded ground fallback - match server behavior
-            // Players should only collide with defined platforms for fall-off deaths to work
 
             return { isGrounded, groundY, platform: landedPlatform };
         }
@@ -2269,78 +2276,53 @@
                 performClientDash(inputs.dash, now);
             }
             
-            // ---------------------------------------------------------------------------
-            // Vertical movement & collision (platform-aware)
-            // ---------------------------------------------------------------------------
-
-            const ignoreOneWayNow = inputs.down || isDroppingThrough(); // hold or active drop
-            // Evaluate current ground state BEFORE movement
-            let groundState = getClientGroundState(clientPlayerState, ignoreOneWayNow);
-
-            // Allow drop-through ONLY when on a ONE_WAY platform
-            const wantsToDrop = inputs.down && groundState.isGrounded &&
-                                groundState.platform && groundState.platform.type === window.PlatformConfig.PLATFORM_TYPES.ONE_WAY;
-
-            if (wantsToDrop) {
-                // Initiate a small downward velocity so gravity takes over
-                clientPlayerState.velocityY = Math.max(clientPlayerState.velocityY, 200); // faster pass-through
-                clientPlayerState.droppingTimer = 12; // ignore one-way collisions for ~200ms (12 frames)
-                groundState.isGrounded = false;
-                clientPlayerState.isGrounded = false;
-            }
-
-            // Decrement droppingTimer each frame
-            if (clientPlayerState.droppingTimer && clientPlayerState.droppingTimer > 0) {
-                clientPlayerState.droppingTimer--;
-            }
-
-            // Apply gravity when not grounded
-            if (!groundState.isGrounded) {
-                clientPlayerState.velocityY += PHYSICS_CONSTANTS.GRAVITY * deltaTime;
-                // Proposed next position
-                const candidateY = clientPlayerState.y + clientPlayerState.velocityY * deltaTime;
-                // If we would overshoot a SOLID/SPAWN platform or ground, clamp smoothly
-                if (groundState.isGrounded && candidateY > groundState.groundY &&
-                    (!groundState.platform || groundState.platform.type !== window.PlatformConfig.PLATFORM_TYPES.ONE_WAY || !ignoreOneWayNow)) {
-                    clientPlayerState.y = groundState.groundY;
-                } else {
-                    clientPlayerState.y = candidateY;
-                }
-            }
-
-            // Re-evaluate ground state AFTER movement to clamp to platforms/ground
-            groundState = getClientGroundState(clientPlayerState, ignoreOneWayNow);
-
-            // Smoothly settle onto platform/ground to remove visible gaps without hard snap
-            if (groundState.isGrounded) {
-                const diff = groundState.groundY - clientPlayerState.y; // positive if below surface, negative if floating above
-                const absDiff = Math.abs(diff);
-                if (absDiff > 0.5) { // ignore sub-pixel noise
-                    const settleFactor = absDiff > 8 ? 1 : 0.5; // big error – snap, small – glide
-                    clientPlayerState.y += diff * settleFactor;
-                }
-            }
-
+            // SIMPLIFIED VERTICAL PHYSICS: Much more conservative to prevent bouncing
             const serverPlayer = gameState.players[myPlayerId];
-            const serverAgreesGrounded = serverPlayer && serverPlayer.isGrounded;
+            
+            // Safety check - if no server data, skip prediction this frame
+            if (!serverPlayer) {
+                return;
+            }
+            
+            // If server and client disagree significantly on Y position, trust server more
+            if (Math.abs(clientPlayerState.y - serverPlayer.y) > 30) {
+                // Large Y difference - gradually sync to server
+                const yDiff = serverPlayer.y - clientPlayerState.y;
+                clientPlayerState.y += yDiff * 0.2; // Gentle correction
+                clientPlayerState.velocityY = serverPlayer.velocityY || 0;
+                clientPlayerState.isGrounded = serverPlayer.isGrounded;
+            } else {
+                // Normal prediction for small differences
+                const ignoreOneWayNow = inputs.down || isDroppingThrough();
+                let groundState = getClientGroundState(clientPlayerState, ignoreOneWayNow);
 
-            // Improved ground state synchronization
-            if (groundState.isGrounded) {
-                if (serverAgreesGrounded) {
-                    // Both client and server agree - maintain stable state
-                    clientPlayerState.velocityY = 0;
-                    if (!clientPlayerState.isGrounded) {
+                // Handle drop-through for one-way platforms
+                const wantsToDrop = inputs.down && groundState.isGrounded &&
+                                    groundState.platform && groundState.platform.type === window.PlatformConfig.PLATFORM_TYPES.ONE_WAY;
+
+                if (wantsToDrop) {
+                    clientPlayerState.velocityY = Math.max(clientPlayerState.velocityY, 200);
+                    clientPlayerState.droppingTimer = 12;
+                    clientPlayerState.isGrounded = false;
+                } else {
+                    // Decrement dropping timer
+                    if (clientPlayerState.droppingTimer && clientPlayerState.droppingTimer > 0) {
+                        clientPlayerState.droppingTimer--;
+                    }
+
+                    // Conservative gravity application
+                    if (!groundState.isGrounded) {
+                        clientPlayerState.velocityY += PHYSICS_CONSTANTS.GRAVITY * deltaTime;
+                        clientPlayerState.y += clientPlayerState.velocityY * deltaTime;
+                        clientPlayerState.isGrounded = false;
+                    } else {
+                        // Grounded - stop vertical movement and position exactly
+                        clientPlayerState.y = groundState.groundY;
+                        clientPlayerState.velocityY = 0;
                         clientPlayerState.isGrounded = true;
                         clientPlayerState.jumpsRemaining = 2;
                     }
-                } else if (Math.abs(clientPlayerState.y - (serverPlayer?.y || 0)) < 10) {
-                    // Small position difference - trust client prediction
-                    clientPlayerState.velocityY = 0;
-                    clientPlayerState.isGrounded = true;
                 }
-            } else {
-                // Not grounded on any platform
-                clientPlayerState.isGrounded = false;
             }
             
             // Update blocking state
@@ -2514,7 +2496,9 @@
             if (now - lastDebugUpdate < DEBUG_UPDATE_INTERVAL) return;
             lastDebugUpdate = now;
             
-            document.getElementById('prediction-status').textContent = predictionEnabled ? 'ON' : 'OFF';
+            const predictionStatusEl = document.getElementById('prediction-status');
+            predictionStatusEl.textContent = predictionEnabled ? 'ON' : 'OFF';
+            predictionStatusEl.style.color = predictionEnabled ? '#66ff66' : '#ff6666';
             document.getElementById('buffer-size').textContent = inputBuffer.length;
             document.getElementById('server-time').textContent = (now - lastServerUpdate).toFixed(0) + 'ms ago';
             

@@ -2309,9 +2309,18 @@
                 }
             }
             
+            const MOVE_SPEED_PER_TICK = 4;
             // SIMPLIFIED: More conservative movement prediction
-            const moveSpeed = clientPlayerState.blocking ? 3 : 6; // Match server MOVEMENT_SPEED
-            
+            const moveSpeed = clientPlayerState.blocking 
+                ? MOVE_SPEED_PER_TICK * 0.5
+                : MOVE_SPEED_PER_TICK; // Match server MOVEMENT_SPEED
+            // constants – put these near the other physics constants
+            const DASH_VELOCITY = 900; // Match server DASH_VELOCITY (increased from 300)
+            const DASH_DECAY_RATE = 0.85;
+            const DASH_DURATION = 150;     // ms
+
+
+
             // Conservative movement handling to reduce divergence
             if (inputs.left) {
                 clientPlayerState.x -= moveSpeed;
@@ -2332,6 +2341,19 @@
             // Dash prediction with client-side validation
             if (inputs.dash && validateClientDash(now)) {
                 performClientDash(inputs.dash, now);
+            }
+
+            if (clientPlayerState.isDashing) {
+                const dashElapsed = now - clientPlayerState.dashStartTime;
+
+                if (dashElapsed >= DASH_DURATION) {
+                    clientPlayerState.isDashing = false;
+                    clientPlayerState.dashVelocity = 0;
+                    clientPlayerState.dashDirection = 0;
+                } else {
+                    clientPlayerState.dashVelocity *= DASH_DECAY_RATE;
+                    clientPlayerState.x += clientPlayerState.dashVelocity * deltaTime;
+                }
             }
             
             // IMPROVED VERTICAL PHYSICS: Better jump handling
@@ -2461,7 +2483,6 @@
         }
 
         function performClientDash(direction, currentTime) {
-            const dashVelocity = 900; // Match server DASH_VELOCITY (increased from 300)
             const dashDirection = direction === 'left' ? -1 : 1;
             
             // Apply dash physics immediately
@@ -2469,10 +2490,10 @@
             clientPlayerState.dashDirection = dashDirection;
             clientPlayerState.dashStartTime = currentTime;
             clientPlayerState.lastDashTime = currentTime;
-            clientPlayerState.dashVelocity = dashVelocity * dashDirection;
+            clientPlayerState.dashVelocity = DASH_VELOCITY * dashDirection;
             
             // Apply immediate velocity boost for responsive feel
-            clientPlayerState.velocityX += clientPlayerState.dashVelocity;
+            // clientPlayerState.velocityX += clientPlayerState.dashVelocity;
             
             // Apply movement immediately  
             const deltaTime = 1 / PHYSICS_CONSTANTS.FRAME_RATE;

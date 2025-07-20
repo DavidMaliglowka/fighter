@@ -1162,11 +1162,11 @@
         let lastServerUpdate = 0;
         let predictionEnabled = true;
         const PHYSICS_CONSTANTS = {
-            GRAVITY: 800,
+            GRAVITY: 1200, // Increased for snappier falls
             GROUND_Y: 560,
             FRAME_RATE: 60,
-            JUMP_VELOCITY_SINGLE: -500,
-            JUMP_VELOCITY_DOUBLE: -400
+            JUMP_VELOCITY_SINGLE: -550, // Slightly stronger jumps
+            JUMP_VELOCITY_DOUBLE: -450
         };
 
         // ==================== ROOM MANAGEMENT SYSTEM ====================
@@ -2229,8 +2229,12 @@
         }
  
         function applyClientSidePrediction(inputs) {
-            const deltaTime = 1 / PHYSICS_CONSTANTS.FRAME_RATE;
+            // Use actual frame timing for accurate physics
             const now = Date.now();
+            if (!this.lastPredictionTime) this.lastPredictionTime = now;
+            const actualDeltaTime = (now - this.lastPredictionTime) / 1000; // Convert to seconds
+            const deltaTime = Math.min(actualDeltaTime, 1/30); // Cap at 30fps to prevent large jumps
+            this.lastPredictionTime = now;
             
             // Apply same anti-cheat logic as server: prevent conflicting inputs
             let inputsCancelled = false;
@@ -2276,7 +2280,7 @@
                 performClientDash(inputs.dash, now);
             }
             
-            // SIMPLIFIED VERTICAL PHYSICS: Much more conservative to prevent bouncing
+            // IMPROVED VERTICAL PHYSICS: Better jump handling
             const serverPlayer = gameState.players[myPlayerId];
             
             // Safety check - if no server data, skip prediction this frame
@@ -2284,13 +2288,18 @@
                 return;
             }
             
-            // If server and client disagree significantly on Y position, trust server more
-            if (Math.abs(clientPlayerState.y - serverPlayer.y) > 30) {
-                // Large Y difference - gradually sync to server
+            // Only override client physics for extreme disagreements or when grounded
+            const yDifference = Math.abs(clientPlayerState.y - serverPlayer.y);
+            const shouldTrustServer = yDifference > 100 || // Extreme disagreement
+                                     (serverPlayer.isGrounded && yDifference > 50); // Server says grounded with big difference
+            
+            if (shouldTrustServer) {
+                // Large disagreement - gradually sync to server
                 const yDiff = serverPlayer.y - clientPlayerState.y;
-                clientPlayerState.y += yDiff * 0.2; // Gentle correction
+                clientPlayerState.y += yDiff * 0.3; // Moderate correction
                 clientPlayerState.velocityY = serverPlayer.velocityY || 0;
                 clientPlayerState.isGrounded = serverPlayer.isGrounded;
+                clientPlayerState.jumpsRemaining = serverPlayer.jumpsRemaining;
             } else {
                 // Normal prediction for small differences
                 const ignoreOneWayNow = inputs.down || isDroppingThrough();
@@ -2310,9 +2319,17 @@
                         clientPlayerState.droppingTimer--;
                     }
 
-                    // Conservative gravity application
+                    // Apply gravity and vertical movement
                     if (!groundState.isGrounded) {
+                        // Apply gravity consistently for airborne movement
                         clientPlayerState.velocityY += PHYSICS_CONSTANTS.GRAVITY * deltaTime;
+                        
+                        // Cap maximum fall speed for more predictable physics
+                        const maxFallSpeed = 800;
+                        if (clientPlayerState.velocityY > maxFallSpeed) {
+                            clientPlayerState.velocityY = maxFallSpeed;
+                        }
+                        
                         clientPlayerState.y += clientPlayerState.velocityY * deltaTime;
                         clientPlayerState.isGrounded = false;
                     } else {
@@ -2341,7 +2358,11 @@
         function validateClientJump(currentTime) {
             if (!clientPlayerState || clientPlayerState.health <= 0) return false;
             if (clientPlayerState.jumpsRemaining <= 0) return false;
-            if (currentTime - clientPlayerState.lastJumpTime < 200) return false;
+            if (currentTime - clientPlayerState.lastJumpTime < 250) return false; // Increased cooldown
+            
+            // Prevent impossible jumps - if falling too fast, deny jump
+            if (clientPlayerState.velocityY > 300) return false;
+            
             return true;
         }
         
@@ -2388,7 +2409,7 @@
                 updateLocalPlayerHealthBar();
             }
             
-            // Reduced logging for dash prediction
+                             // Reduced logging - only for debugging
         }
         
         function bufferInput(inputs) {
@@ -2489,7 +2510,7 @@
         }
         
         let lastDebugUpdate = 0;
-        const DEBUG_UPDATE_INTERVAL = 200; // Update debug panel only every 200ms for better performance
+        const DEBUG_UPDATE_INTERVAL = 300; // Update debug panel only every 300ms for better performance
         
         function updateDebugPanel() {
             const now = Date.now();

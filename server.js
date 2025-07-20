@@ -140,7 +140,7 @@ const players = {};
 const ATTACK_RANGE = 70;
 const ATTACK_DAMAGE = 15;
 const MOVEMENT_SPEED = 6; // Increased by 1.5x for more responsive movement
-const GRAVITY = 800;
+const GRAVITY = 1200; // Increased for snappier falls
 const GROUND_Y = 560; // Ground level (600 - 40 for ground height)
 const FRAME_RATE = 60;
 
@@ -1023,7 +1023,7 @@ function validateJump(player, currentTime) {
 // Perform jump with event broadcasting
 function performJump(player, currentTime, socket) {
     const isFirstJump = player.jumpsRemaining === 2;
-    const jumpVelocity = isFirstJump ? -500 : -400; // First jump stronger
+    const jumpVelocity = isFirstJump ? -550 : -450; // First jump stronger, improved responsiveness
     
     // Apply jump physics
     player.velocityY = jumpVelocity;
@@ -1222,6 +1222,12 @@ function updatePhysics() {
         
         // Apply gravity
         player.velocityY += GRAVITY * deltaTime;
+        
+        // Cap maximum fall speed for more predictable physics
+        const maxFallSpeed = 800;
+        if (player.velocityY > maxFallSpeed) {
+            player.velocityY = maxFallSpeed;
+        }
         
         // Update position based on velocity
         player.y += player.velocityY * deltaTime;

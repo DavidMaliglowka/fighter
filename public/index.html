@@ -579,8 +579,10 @@
         <div>Prediction: <span id="prediction-status">ON</span></div>
         <div>Position Error: <span id="position-error">0.0</span>px</div>
         <div>Buffer Size: <span id="buffer-size">0</span></div>
-        <div>Last Update: <span id="last-update">0</span>ms ago</div>
+        <div>Last Update: <span id="server-time">0</span>ms ago</div>
         <div>Input Status: <span id="input-status">Normal</span></div>
+        <div>Latency: <span id="latency">0ms</span></div>
+        <div>Server Tick: <span id="server-tickrate">30fps</span></div>
     </div>
     
     <script>
@@ -1562,10 +1564,7 @@
             socket.on('platformData', (platformData) => {
                 console.log(`[OPTIMIZATION] Received platform data for room ${platformData.roomCode}`);
                 gameState.platforms = platformData.platforms;
-                // Re-render platforms if needed
-                if (platforms) {
-                    renderPlatforms.call(this);
-                }
+                // Platforms are static and already rendered in create() - no need to re-render
             });
             
             socket.on('connect', () => {

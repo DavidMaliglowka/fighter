@@ -2196,6 +2196,9 @@ let performanceStats = {
     sampleCount: 0
 };
 
+// Define gameLoop object for state tracking
+const gameLoop = { tick: 0 };
+
 function measureGameLoopPerformance(executionTime) {
     performanceStats.sampleCount++;
     performanceStats.avgExecutionTime = 

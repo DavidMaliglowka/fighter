@@ -79,10 +79,10 @@ app.use(cors({
     credentials: true
 }));
 
-// Rate limiting - more permissive for development
+// Rate limiting - permissive for multiplayer gaming
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: process.env.NODE_ENV === 'production' ? 100 : 1000, // Higher limit for development
+    max: process.env.NODE_ENV === 'production' ? 1000 : 1000, // High limit for multiplayer gaming
     message: 'Too many requests from this IP, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,

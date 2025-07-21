@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
 const platformConfig = require('./public/platforms.js');
+const path = require('path');
 
 // Load environment variables
 require('dotenv').config();
@@ -152,7 +153,7 @@ const ATTACK_RANGE = 70;
 const ATTACK_DAMAGE = 15;
 const MOVEMENT_SPEED = 4; // Increased by 1.5x for more responsive movement
 const GRAVITY = 1200; // Increased for snappier falls
-const GROUND_Y = 540; // Ground level for platform at Y=580, height=32, player height=48: 580-16-24=540
+const GROUND_Y = 524; // Ground level for platform at Y=580, height=32, player height=80: 580-16-40=524
 const FRAME_RATE = 30; // Match actual tick rate for consistency
 
 // Death boundary constants - extended fall-off area
@@ -894,7 +895,7 @@ function getPlayerGroundState(player, droppingFromPlatformId = null) {
         
         if (isHorizontallyOverlapping) {
             const platformTop = platform.y - platform.height / 2;
-            const playerBottom = player.y + 30; // Player height/2 = 30px
+                            const playerBottom = player.y + 40; // Player height/2 = 40px (height=80)
             
             // Check if player is close enough to platform top (within reasonable landing distance)
             const distanceToTop = playerBottom - platformTop;
@@ -935,7 +936,7 @@ function getPlayerGroundState(player, droppingFromPlatformId = null) {
     if (droppingFromPlatformId &&
         player.y - PlatformUtils.getPlayerStandingY(
             PLATFORMS.find(p => p.id === droppingFromPlatformId)
-        ) > 40) {           // 40 px = ⅔ of player height
+        ) > 53) {           // 53 px = ⅔ of player height (80px)
         player.droppingFromPlatform = null;
     }
     
@@ -1519,7 +1520,12 @@ io.on('connection', (socket) => {
         kills: 0,
         deaths: 0,
         lastAttacker: null,
-        lastAttackTime: 0
+        lastAttackTime: 0,
+        // Character appearance (assigned when joining a room)
+        character: null,
+        characterTint: 0xffffff,
+        // Player identity
+        displayName: getPlayerDisplayName(socket)
     };
     
     // Send empty initial game state (players will get real state after joining a room)
@@ -1811,6 +1817,10 @@ io.on('connection', (socket) => {
                     roomInfo.room.gameState.gameStarted = true;
                     roomInfo.room.gameState.matchInProgress = true;
                     
+                    // Assign characters to all players in the room
+                    const playerIds = Array.from(roomInfo.room.players.keys());
+                    reassignRoomCharacters(roomInfo.code, playerIds);
+                    
                     // Hide room UI and start game for all players in room
                     io.to(roomInfo.code).emit('gameStarted', {
                         message: 'Fight!',
@@ -1910,6 +1920,10 @@ io.on('connection', (socket) => {
                         roomInfo.room.gameState.phase = 'in-progress';
                         roomInfo.room.gameState.gameStarted = true;
                         roomInfo.room.gameState.matchInProgress = true;
+                        
+                        // Reassign characters to all players in the room for rematch
+                        const playerIds = Array.from(roomInfo.room.players.keys());
+                        reassignRoomCharacters(roomInfo.code, playerIds);
                         
                         io.to(roomInfo.code).emit('gameStarted', {
                             message: 'Round 2, Fight!',
@@ -2037,6 +2051,12 @@ io.on('connection', (socket) => {
                 console.log(`[AUTH] - Display Name: ${socket.user.displayName}`);
                 console.log(`[AUTH] - Is Guest: ${socket.user.isGuest}`);
                 console.log(`[AUTH] - Is Anonymous: ${socket.user.isAnonymous}`);
+                
+                // Update player displayName if player exists
+                if (players[socket.id]) {
+                    players[socket.id].displayName = getPlayerDisplayName(socket);
+                    console.log(`[AUTH] Updated player displayName to: ${players[socket.id].displayName}`);
+                }
                 
                 if (callback) {
                     callback({ 
@@ -2195,6 +2215,10 @@ io.on('connection', (socket) => {
         // Remove player from global players object (only if not in grace period)
         const roomInfo2 = getRoomByPlayer(socket.id);
         if (!roomInfo2 || !roomInfo2.room.disconnectedPlayers.has(socket.id)) {
+            // Clean up character assignment if player had one
+            if (players[socket.id] && players[socket.id].character && roomInfo) {
+                removeCharacterFromPlayer(socket.id, roomInfo.code, players[socket.id].character);
+            }
             delete players[socket.id];
         }
     });
@@ -2308,4 +2332,94 @@ function sendPlatformDataToRoom(roomCode) {
     };
     io.to(roomCode).emit('platformData', platformData);
     console.log(`[OPTIMIZATION] Sent platform data to all players in room ${roomCode}`);
+}
+
+// Character assignment constants
+const SAMURAI_CHARACTERS = ['samurai-1', 'samurai-4'];
+const CHARACTER_TINT_COLORS = [
+    0xffffff, // White (no tint) - first player with character
+    0xAA44FF, // Purple - second player with same character
+    0x44FF44, // Green - third player with same character
+    0xFF44AA, // Pink - fourth player with same character
+    0x4444FF, // Dark blue - fifth player with same character
+    0x222222  // Dark gray/black - sixth player with same character
+];
+
+// Track character assignments per room
+const roomCharacterAssignments = new Map(); // roomCode -> { characterName -> count }
+
+// Function to assign character with tint for a player in a room
+function assignCharacterToPlayer(playerId, roomCode) {
+    // Use deterministic hash based on player ID to ensure consistency
+    let hash = 0;
+    for (let i = 0; i < playerId.length; i++) {
+        const char = playerId.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32-bit integer
+    }
+    
+    const characterIndex = Math.abs(hash) % SAMURAI_CHARACTERS.length;
+    const assignedCharacter = SAMURAI_CHARACTERS[characterIndex];
+    
+    // Initialize room character tracking if needed
+    if (!roomCharacterAssignments.has(roomCode)) {
+        roomCharacterAssignments.set(roomCode, new Map());
+    }
+    
+    const roomCharacters = roomCharacterAssignments.get(roomCode);
+    const currentCount = roomCharacters.get(assignedCharacter) || 0;
+    
+    // Assign tint color based on how many players already have this character
+    const tintColor = CHARACTER_TINT_COLORS[currentCount] || CHARACTER_TINT_COLORS[CHARACTER_TINT_COLORS.length - 1];
+    
+    // Increment counter for this character in this room
+    roomCharacters.set(assignedCharacter, currentCount + 1);
+    
+    console.log(`[CHARACTER] Assigned ${assignedCharacter} to player ${playerId} in room ${roomCode} - duplicate #${currentCount + 1}, tint: 0x${tintColor.toString(16)}`);
+    
+    return {
+        character: assignedCharacter,
+        characterTint: tintColor
+    };
+}
+
+// Function to remove character assignment when player leaves
+function removeCharacterFromPlayer(playerId, roomCode, character) {
+    if (!roomCharacterAssignments.has(roomCode)) return;
+    
+    const roomCharacters = roomCharacterAssignments.get(roomCode);
+    if (!roomCharacters.has(character)) return;
+    
+    const currentCount = roomCharacters.get(character);
+    if (currentCount <= 1) {
+        roomCharacters.delete(character);
+    } else {
+        roomCharacters.set(character, currentCount - 1);
+    }
+    
+    console.log(`[CHARACTER] Removed ${character} from player ${playerId} in room ${roomCode}`);
+}
+
+// Function to reassign all characters in a room (for consistency after disconnections)
+function reassignRoomCharacters(roomCode, playerIds) {
+    if (!roomCharacterAssignments.has(roomCode)) {
+        roomCharacterAssignments.set(roomCode, new Map());
+    }
+    
+    // Clear existing assignments for this room
+    roomCharacterAssignments.get(roomCode).clear();
+    
+    // Reassign all players in order
+    const assignments = {};
+    for (const playerId of playerIds) {
+        if (players[playerId]) {
+            const assignment = assignCharacterToPlayer(playerId, roomCode);
+            players[playerId].character = assignment.character;
+            players[playerId].characterTint = assignment.characterTint;
+            assignments[playerId] = assignment;
+        }
+    }
+    
+    console.log(`[CHARACTER] Reassigned characters in room ${roomCode} for ${playerIds.length} players`);
+    return assignments;
 }

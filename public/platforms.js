@@ -27,7 +27,7 @@ const GAME_BOUNDS = {
 // Platform physics constants
 const PLATFORM_PHYSICS = {
     PLAYER_WIDTH: 40,
-    PLAYER_HEIGHT: 48,    // Reduced from 60 to make characters appear larger/closer to ground
+    PLAYER_HEIGHT: 80,    // Back to 80 - the doubled sprites need this height for proper platform positioning
     ONE_WAY_VELOCITY_THRESHOLD: 0 // Must be falling to land on one-way platforms
 };
 
@@ -46,8 +46,8 @@ const PLATFORMS = [
         type: PLATFORM_TYPES.SOLID,
         x: 400,        // Center of screen
         y: 580,        // Y position (platform center)
-        width: 800,    // Full width
-        height: 32,    // Single tile height (one row)
+        width: 864,    // Full width
+        height: 96,    // Single tile height (one row)
         level: 0
     },
     
@@ -58,7 +58,7 @@ const PLATFORMS = [
         x: 100,        // Left side
         y: 580,        // Same level as main ground
         width: 120,
-        height: 32,    // Same height as main ground
+        height: 96,    // Same height as main ground
         level: 0
     },
     {
@@ -67,7 +67,7 @@ const PLATFORMS = [
         x: 700,        // Right side
         y: 580,        // Same level as main ground
         width: 120,
-        height: 32,    // Same height as main ground
+        height: 96,    // Same height as main ground
         level: 0
     },
     
@@ -86,8 +86,8 @@ const PLATFORMS = [
         type: PLATFORM_TYPES.ONE_WAY,
         x: 200,        // Left side
         y: 400,        // Slightly lower
-        width: 128,    // 2 flags * 64px = proper spacing
-        height: 15,
+        width: 120,    // 2 flags * 60px = proper spacing
+        height: 64,
         level: 1
     },
     {
@@ -95,8 +95,8 @@ const PLATFORMS = [
         type: PLATFORM_TYPES.ONE_WAY, 
         x: 600,        // Right side
         y: 400,        // Slightly lower
-        width: 128,    // 2 flags * 64px = proper spacing
-        height: 15,
+        width: 120,    // 2 flags * 60px = proper spacing
+        height: 64,
         level: 1
     },
     
@@ -106,8 +106,8 @@ const PLATFORMS = [
         type: PLATFORM_TYPES.ONE_WAY,
         x: 150,
         y: 280,        // High up
-        width: 128,    // 2 flags * 64px = proper spacing
-        height: 15,
+        width: 120,    // 2 flags * 60px = proper spacing
+        height: 64,
         level: 2
     },
     {
@@ -115,8 +115,8 @@ const PLATFORMS = [
         type: PLATFORM_TYPES.ONE_WAY,
         x: 650,
         y: 280,        // High up  
-        width: 128,    // 2 flags * 64px = proper spacing
-        height: 15,
+        width: 120,    // 2 flags * 60px = proper spacing
+        height: 64,
         level: 2
     },
     

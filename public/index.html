@@ -41,6 +41,92 @@
             font-size: 14px;
             z-index: 1000;
         }
+        
+        /* Bottom Players Panel */
+        #players-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            display: none; /* Hidden by default */
+            gap: 20px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            z-index: 1000;
+            border: 2px solid rgba(243, 109, 50, 0.3);
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+        
+        #players-panel.visible {
+            display: flex;
+        }
+        
+        .player-info {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            min-width: 80px;
+        }
+        
+        .player-name {
+            font-weight: bold;
+            color: #F36D32;
+            font-size: 12px;
+            text-align: center;
+            max-width: 80px;
+            overflow: hidden;
+            white-space: nowrap;
+            position: relative;
+        }
+        
+        .player-name-text {
+            display: inline-block;
+            transition: transform 0.1s ease;
+        }
+        
+        .player-name-text.marquee {
+            animation: marquee 3s linear infinite;
+        }
+        
+        @keyframes marquee {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(0); }
+            75% { transform: translateX(calc(-100% + 80px)); }
+            100% { transform: translateX(calc(-100% + 80px)); }
+        }
+        
+        .player-name.current-player {
+            color: #FFD700;
+            text-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
+        }
+        
+        .player-name.eliminated {
+            color: #666;
+            text-decoration: line-through;
+        }
+        
+        .player-lives {
+            display: flex;
+            gap: 2px;
+            align-items: center;
+        }
+        
+        .heart-icon {
+            width: 16px;
+            height: 16px;
+            background: url('assets/heart.png') no-repeat center;
+            background-size: contain;
+        }
+        
+        .heart-icon.lost {
+            opacity: 0.2;
+            filter: grayscale(100%);
+        }
         #respawn-countdown {
             position: absolute;
             top: 50%;
@@ -414,9 +500,12 @@
 <body>
     <div id="ui">
         <div id="player-count">Players: 0</div>
-        <div id="health">Health: 100</div>
-        <div id="lives">Lives: 3</div>
         <div id="match-status"></div>
+    </div>
+    
+    <!-- Bottom Players Panel -->
+    <div id="players-panel">
+        <!-- Players will be populated here dynamically -->
     </div>
     
     <!-- Room Management UI -->
@@ -713,6 +802,12 @@
             // Show room UI container but only with auth section
             roomUI.classList.remove('hidden');
             
+            // Hide players panel when in authentication
+            const playersPanel = document.getElementById('players-panel');
+            if (playersPanel) {
+                playersPanel.classList.remove('visible');
+            }
+            
             console.log('showAuthSection complete - only auth section should be visible');
         }
         
@@ -763,9 +858,15 @@
                 console.log('Hidden room-lobby');
             }
             
-            // Show room UI container
+            // Show room UI container and hide players panel
             roomUI.classList.remove('hidden');
             gameStarted = false;
+            
+            // Hide players panel when in menu
+            const playersPanel = document.getElementById('players-panel');
+            if (playersPanel) {
+                playersPanel.classList.remove('visible');
+            }
             
             console.log('showMainMenu complete - should show main menu only');
         }
@@ -1171,7 +1272,7 @@
         console.log(`[CLIENT PHYSICS] Started with 30fps (deltaTime: ${(1/30).toFixed(4)}s) to match server tick rate`);
         const PHYSICS_CONSTANTS = {
             GRAVITY: 1200, // Increased for snappier falls
-            GROUND_Y: 540, // Updated to match platform Y=580, height=32, player height=48
+            GROUND_Y: 524, // Updated to match platform Y=580, height=32, player height=80
             FRAME_RATE: 30, // Match server tick rate for consistency
             JUMP_VELOCITY_SINGLE: -550, // Slightly stronger jumps
             JUMP_VELOCITY_DOUBLE: -450
@@ -1221,12 +1322,23 @@
             // Show start button only for host
             startGameBtn.style.display = isHost ? 'block' : 'none';
             
+            // Hide players panel when in lobby
+            const playersPanel = document.getElementById('players-panel');
+            if (playersPanel) {
+                playersPanel.classList.remove('visible');
+            }
+            
             console.log('Showing room lobby for room:', roomCode);
         }
         
         function hideRoomUI() {
             roomUI.classList.add('hidden');
             gameStarted = true;
+            // Show players panel during gameplay
+            const playersPanel = document.getElementById('players-panel');
+            if (playersPanel) {
+                playersPanel.classList.add('visible');
+            }
         }
         
         function updatePlayerList(players) {
@@ -1416,16 +1528,19 @@
         // ==================== END ROOM MANAGEMENT SYSTEM ====================
 
         // Character and asset configuration
-        const SAMURAI_CHARACTERS = ['samurai-1', 'samurai-4'];
         const SPRITE_CONFIG = {
             IDLE: { frames: 10, width: 96, height: 96, frameRate: 8 },
             RUN: { frames: 12, width: 96, height: 96, frameRate: 12 },
             JUMP: { frames: 3, width: 96, height: 96, frameRate: 6 },
             BLOCK: { frames: 5, width: 96, height: 96, frameRate: 6 },
             'ATTACK 1': { frames: 12, width: 96, height: 96, frameRate: 15 },
+            'ATTACK 2': { frames: 14, width: 96, height: 96, frameRate: 15 },
             HURT: { frames: 11, width: 96, height: 96, frameRate: 10 },
             DEATH: { frames: 21, width: 96, height: 96, frameRate: 12 }
         };
+
+        // Available characters (used for asset loading)
+        const SAMURAI_CHARACTERS = ['samurai-1', 'samurai-4'];
 
         // Character-specific Y offsets to compensate for different artwork baselines
         const CHARACTER_Y_OFFSETS = {
@@ -1433,7 +1548,7 @@
             'samurai-4': 8     // Bring samurai-4 down 8px to align with ground
         };
 
-        // Store player character assignments
+        // Store player character assignments (from server)
         const playerCharacters = {};
 
         function preload() {
@@ -1450,11 +1565,16 @@
                 frameHeight: 32
             });
             
-            // Load 96x96 tiles as spritesheet (adjust startX/startY based on your tileset layout)
+            // Load 96x96 tiles as spritesheet with manual offset calculation
             this.load.spritesheet('tileset-96', 'assets/Environment/Tileset/Tileset.png', {
                 frameWidth: 96,
-                frameHeight: 96
+                frameHeight: 96,
+                spacing: 0,
+                margin: 0
             });
+            
+            // Alternative: Load the tileset as a regular image for manual cropping if needed
+            this.load.image('tileset-full-debug', 'assets/Environment/Tileset/Tileset.png');
             
             // Load 32x96 vertical tiles as spritesheet  
             this.load.spritesheet('tileset-32x96', 'assets/Environment/Tileset/Tileset.png', {
@@ -1479,6 +1599,15 @@
 
             console.log('[SPRITES] Loading character spritesheets for', SAMURAI_CHARACTERS.length, 'characters');
             console.log('[SPRITES] Loading tileset spritesheet for platform tiling');
+            
+            // Debug: Log tileset frame info after loading
+            this.load.on('complete', () => {
+                const tilesetTexture = this.textures.get('tileset-96');
+                if (tilesetTexture) {
+                    console.log('[TILESET DEBUG] Total frames in tileset-96:', tilesetTexture.frameTotal);
+                    console.log('[TILESET DEBUG] Frame data:', tilesetTexture.frames);
+                }
+            });
         }
 
         // Platforms are now server-side only - no client collision callbacks needed
@@ -1505,15 +1634,15 @@
                     
                     // Different rendering based on platform type
                     if (platformData.type === PLATFORM_TYPES.ONE_WAY) {
-                        // Use Flag.png for one-way platforms
-                        const flagsHorizontal = Math.ceil(platformData.width / 64); // Flag is wider, use less
+                        // Use Flag.png for one-way platforms - flag is now 60px wide
+                        const flagsHorizontal = Math.ceil(platformData.width / 60); // 60px wide flags
                         for (let x = 0; x < flagsHorizontal; x++) {
                             const flag = this.add.image(
-                                (x * 64) - (platformData.width / 2) + 32, // Center flags
+                                (x * 60) - (platformData.width / 2) + 30, // Center 60px flags
                                 0, // Center vertically
                                 'flag'
                             );
-                            flag.setScale(0.5); // Scale down if needed
+                            // No scaling needed - flag is already 60px wide
                             platformContainer.add(flag);
                         }
                     } else {
@@ -1522,7 +1651,7 @@
                             case PLATFORM_TYPES.SOLID:
                                 // For solid platforms, prefer 96x96 tiles for larger platforms
                                 if (platformData.width >= 96 && platformData.height >= 96) {
-                                    // Use 96x96 tiles - frame 0 is the first/top-left 96x96 section
+                                    // Use 96x96 tiles - skip initial 32px gap by using frame 1
                                     const tilesHorizontal = Math.ceil(platformData.width / 96);
                                     const tilesVertical = Math.ceil(platformData.height / 96);
                                     
@@ -1532,7 +1661,7 @@
                                                 (x * 96) - (platformData.width / 2) + 48, // Center 96px tiles
                                                 (y * 96) - (platformData.height / 2) + 48,
                                                 'tileset-96',
-                                                0 // Frame 0 = first 96x96 tile
+                                                0 // Frame 1 to skip initial 32px gap manually
                                             );
                                             platformContainer.add(tile);
                                         }
@@ -2128,6 +2257,8 @@
                     delete playerSprites[id];
                     delete playerHealthBars[id];
                     delete playerAttackEffects[id];
+                    
+                    // Clean up character assignments
                     delete playerCharacters[id];
                 }
             }
@@ -2137,36 +2268,22 @@
                 const player = gameState.players[id];
                 
                 if (!playerSprites[id]) {
-                    // Assign deterministic character to new player based on player ID
-                    if (!playerCharacters[id]) {
-                        // Use a simple hash of the player ID to ensure same character across all clients
-                        let hash = 0;
-                        for (let i = 0; i < id.length; i++) {
-                            const char = id.charCodeAt(i);
-                            hash = ((hash << 5) - hash) + char;
-                            hash = hash & hash; // Convert to 32-bit integer
-                        }
-                        const characterIndex = Math.abs(hash) % SAMURAI_CHARACTERS.length;
-                        playerCharacters[id] = SAMURAI_CHARACTERS[characterIndex];
-                        console.log(`[SPRITES] Assigned ${playerCharacters[id]} to player ${id} (deterministic)`);
-                    }
+                    // Use character assignment from server (player.character)
+                    const assignedCharacter = player.character || 'samurai-1'; // Default fallback
+                    playerCharacters[id] = assignedCharacter;
+                    
+                    console.log(`[SPRITES] Using server-assigned character ${assignedCharacter} for player ${id} with tint: 0x${(player.characterTint || 0xffffff).toString(16)}`);
                     
                     // Create new player sprite using character base texture (first frame)
                     const baseCharacterKey = `${playerCharacters[id]}-idle`;
                     const characterYOffset = CHARACTER_Y_OFFSETS[playerCharacters[id]] || 0;
                     playerSprites[id] = this.add.sprite(player.x + 200, player.y + characterYOffset, baseCharacterKey, 0); // Use frame 0
-                    playerSprites[id].setScale(0.6); // Scale up from 0.5 to make characters appear larger and more grounded
+                    playerSprites[id].setScale(1.2); // Doubled from 0.6 to 1.2 for larger characters
                     
                     // Store player ID and character on sprite for reference
                     playerSprites[id].playerId = id;
                     playerSprites[id].character = playerCharacters[id];
                     playerSprites[id].characterYOffset = characterYOffset; // Store offset for position updates
-                    
-                    // Add visual indicator for local player
-                    if (id === myPlayerId) {
-                        playerSprites[id].setTint(0xFF9A56); // Light orange tint for local player
-                        console.log(`[SPRITES] Local player indicator added for ${id}`);
-                    }
                     
                     // Start with idle animation - check if animation exists first
                     const idleAnimKey = `${playerCharacters[id]}-idle`;
@@ -2202,25 +2319,30 @@
                     }
                     
                     // Update sprite animation and effects based on player state
-                    const character = playerCharacters[id] || 'samurai-1';
+                    const character = playerCharacters[id] || player.character || 'samurai-1';
                     let targetAnim = `${character}-idle`;
                     let playerAlpha = 1.0;
-                    let tint = 0xffffff; // Default white (no tint)
+                    let stateTint = null; // State-based tint (overrides character tint)
+                    
+                    // Get the base character tint from server (for duplicate characters)
+                    let baseTint = player.characterTint || 0xffffff;
                     
                     // Determine animation based on player state (priority order)
                     if (player.eliminated || player.health <= 0) {
                         targetAnim = `${character}-death`;
                         playerAlpha = 0.5;
-                        tint = 0x666666; // Gray tint when dead
+                        stateTint = 0x666666; // Gray tint when dead
                     } else if (player.isDead) {
                         targetAnim = `${character}-hurt`;
                         playerAlpha = 0.6;
-                        tint = 0xff6666; // Red tint when hurt
+                        stateTint = 0xff6666; // Red tint when hurt
                     } else if (player.attacking) {
-                        targetAnim = `${character}-attack-1`;
+                        // Use attack-2 for samurai-1, attack-1 for all other characters
+                        const attackType = character === 'samurai-1' ? 'attack-2' : 'attack-1';
+                        targetAnim = `${character}-${attackType}`;
                     } else if (player.blocking) {
                         targetAnim = `${character}-block`;
-                        tint = 0xffff66; // Yellow tint when blocking
+                        stateTint = 0xffff66; // Yellow tint when blocking
                     } else if (player.velocityY < -50) {
                         targetAnim = `${character}-jump`;
                     } else if (Math.abs(player.velocityX) > 1) {
@@ -2234,12 +2356,15 @@
                     // Apply invincibility blinking effect
                     if (player.isInvincible) {
                         playerAlpha = 0.7 + Math.sin(Date.now() * 0.01) * 0.3; // Blinking effect
-                        tint = 0x66ffff; // Cyan tint when invincible
+                        stateTint = 0x66ffff; // Cyan tint when invincible
                     }
+                    
+                    // Determine final tint: state tints override character tints
+                    const finalTint = stateTint || baseTint;
                     
                     // Apply visual effects
                     playerSprites[id].setAlpha(playerAlpha);
-                    playerSprites[id].setTint(tint);
+                    playerSprites[id].setTint(finalTint);
                     
                     // Update animation if it changed - check if animation exists first
                     if (playerSprites[id].anims.currentAnim?.key !== targetAnim) {
@@ -2304,16 +2429,20 @@
             
             if (!myPlayer) return;
             
-            // Check if player state has actually changed
-            const currentState = {
-                health: myPlayer.health,
-                lives: myPlayer.lives,
-                eliminated: myPlayer.eliminated,
-                isDead: myPlayer.isDead,
-                isInvincible: myPlayer.isInvincible
-            };
+            // Check if any player state has changed
+            const allPlayersState = Object.keys(gameState.players).map(id => {
+                const player = gameState.players[id];
+                return {
+                    id: id,
+                    lives: player.lives,
+                    eliminated: player.eliminated,
+                    isDead: player.isDead,
+                    isInvincible: player.isInvincible
+                };
+            });
             
-            const stateChanged = JSON.stringify(currentState) !== JSON.stringify(lastPlayerState);
+            const allPlayersStateStr = JSON.stringify(allPlayersState);
+            const stateChanged = allPlayersStateStr !== JSON.stringify(lastPlayerState);
             
             // Throttle UI updates unless state changed
             if (!stateChanged && now - lastUIUpdate < UI_UPDATE_INTERVAL) {
@@ -2321,12 +2450,12 @@
             }
             
             lastUIUpdate = now;
-            lastPlayerState = currentState;
+            lastPlayerState = allPlayersState;
             
-            document.getElementById('health').textContent = `Health: ${myPlayer.health}`;
-            document.getElementById('lives').textContent = `Lives: ${myPlayer.lives}`;
+            // Update players panel
+            updatePlayersPanel();
             
-            // Update match status
+            // Update match status for current player
             const statusElement = document.getElementById('match-status');
             if (myPlayer.eliminated) {
                 statusElement.textContent = 'ELIMINATED - Spectating';
@@ -2340,6 +2469,84 @@
             } else {
                 statusElement.textContent = '';
             }
+        }
+
+        function updatePlayersPanel() {
+            const playersPanel = document.getElementById('players-panel');
+            if (!playersPanel) return;
+            
+            // Clear existing content
+            playersPanel.innerHTML = '';
+            
+            // Get all players sorted by ID for consistent ordering
+            const playerIds = Object.keys(gameState.players).sort();
+            
+            playerIds.forEach(playerId => {
+                const player = gameState.players[playerId];
+                if (!player) return;
+                
+                // Create player info container
+                const playerInfo = document.createElement('div');
+                playerInfo.className = 'player-info';
+                
+                // Create player name
+                const playerName = document.createElement('div');
+                playerName.className = 'player-name';
+                
+                // Get player display name from server (with fallback)
+                let displayName = player.displayName || `Player ${playerId.substring(0, 6)}`;
+                
+                // Highlight current player
+                if (playerId === myPlayerId) {
+                    playerName.classList.add('current-player');
+                    displayName += ' (You)';
+                }
+                
+                // Mark eliminated players
+                if (player.eliminated) {
+                    playerName.classList.add('eliminated');
+                }
+                
+                // Create inner text element for marquee
+                const playerNameText = document.createElement('span');
+                playerNameText.className = 'player-name-text';
+                playerNameText.textContent = displayName;
+                
+                // Check if text is too long and needs marquee
+                playerName.appendChild(playerNameText);
+                
+                // Measure text width to determine if marquee is needed
+                setTimeout(() => {
+                    const textWidth = playerNameText.offsetWidth;
+                    const containerWidth = playerName.offsetWidth;
+                    
+                    if (textWidth > containerWidth) {
+                        playerNameText.classList.add('marquee');
+                    }
+                }, 10);
+                
+                playerInfo.appendChild(playerName);
+                
+                // Create lives display with hearts
+                const playerLives = document.createElement('div');
+                playerLives.className = 'player-lives';
+                
+                // Add hearts for each life (max 3)
+                for (let i = 0; i < 3; i++) {
+                    const heart = document.createElement('div');
+                    heart.className = 'heart-icon';
+                    
+                    // Make hearts look "lost" if player doesn't have this life
+                    if (i >= player.lives) {
+                        heart.classList.add('lost');
+                    }
+                    
+                    playerLives.appendChild(heart);
+                }
+                
+                playerInfo.appendChild(playerLives);
+                playersPanel.appendChild(playerInfo);
+            });
         }
 
 
@@ -2494,7 +2701,7 @@
                 
                 if (isHorizontallyOverlapping) {
                     const platformTop = platform.y - platform.height / 2;
-                    const playerBottom = player.y + 30; // Player height/2 = 30px (exact server match)
+                    const playerBottom = player.y + 40; // Player height/2 = 40px (exact server match)
                     
                     // MORE GENEROUS LANDING DETECTION: Increased tolerance and added velocity check
                     const distanceToTop = playerBottom - platformTop;

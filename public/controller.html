@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Super Vibe Bros Controller</title>
+    <style>
+        body { 
+            background: #111; 
+            color: #eee; 
+            font-family: 'Arial', sans-serif; 
+            margin: 0; 
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+        
+        #wrap { 
+            display: flex; 
+            flex-direction: row; 
+            height: 100vh; 
+            width: 100vw;
+        }
+        
+        .dpad, .actions { 
+            flex: 1; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            position: relative;
+        }
+        
+        .dpad { 
+            max-width: 50vw; 
+            border-right: 2px solid #333;
+        }
+        
+        .actions {
+            max-width: 50vw;
+        }
+        
+        .dpad-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .dpad-row {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .dpad button, .actions button {
+            background: #222; 
+            border: 4px solid #555; 
+            color: #7ff; 
+            font-size: 28px;
+            font-weight: bold;
+            width: 80px; 
+            height: 80px; 
+            border-radius: 12px; 
+            margin: 6px;
+            touch-action: none;
+            cursor: pointer;
+            transition: all 0.1s ease;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        
+        button.active { 
+            background: #F36D32; 
+            border-color: #F39C5A; 
+            color: white;
+            box-shadow: 0 0 20px rgba(243, 109, 50, 0.6);
+            transform: scale(0.95);
+        }
+        
+        .actions { 
+            flex-direction: column; 
+            gap: 15px; 
+        }
+        
+        .action-row { 
+            display: flex; 
+            gap: 15px;
+            justify-content: center;
+        }
+        
+        .action-row-single {
+            display: flex;
+            justify-content: center;
+        }
+
+        .action-row-double {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+        
+        .action-button {
+            width: 90px;
+            height: 90px;
+            font-size: 32px;
+        }
+        
+        .dash-button {
+            width: 70px;
+            height: 70px;
+            font-size: 24px;
+            background: #444;
+            border-color: #666;
+        }
+        
+        .dash-button.active {
+            background: #FFD700;
+            border-color: #FFA500;
+            color: #222;
+        }
+        
+        .status { 
+            position: absolute; 
+            top: 10px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            font-size: 14px;
+            background: rgba(0,0,0,0.8);
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid #F36D32;
+        }
+        
+        .connection-status {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: rgba(0,0,0,0.8);
+        }
+        
+        .connected { color: #4CAF50; }
+        .connecting { color: #FF9800; }
+        .disconnected { color: #f44336; }
+        
+        .vibrate-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(243, 109, 50, 0.9);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            display: none;
+            z-index: 1000;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 480px) {
+            .dpad button, .actions button {
+                width: 70px;
+                height: 70px;
+                font-size: 24px;
+            }
+            
+            .action-button {
+                width: 80px;
+                height: 80px;
+                font-size: 28px;
+            }
+            
+            .dash-button {
+                width: 60px;
+                height: 60px;
+                font-size: 20px;
+            }
+        }
+        
+        @media (max-height: 500px) {
+            .dpad button, .actions button {
+                width: 60px;
+                height: 60px;
+                font-size: 20px;
+                margin: 4px;
+            }
+            
+            .action-button {
+                width: 70px;
+                height: 70px;
+                font-size: 24px;
+            }
+        }
+        
+        /* Prevent text selection and image dragging */
+        * {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+    </style>
+</head>
+<body>
+    <div id="wrap">
+        <div class="dpad">
+            <div class="status" id="status">CONNECTING...</div>
+            <div class="dpad-container">
+                <div class="dpad-row">
+                    <button data-dir="up">↑</button>
+                </div>
+                <div class="dpad-row">
+                    <button data-dir="left">←</button>
+                    <button data-dir="right">→</button>
+                </div>
+                <div class="dpad-row">
+                    <button data-dir="down">↓</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="actions">
+            <div class="action-row action-row-single">
+                <button data-btn="shield" class="action-button">S</button>
+            </div>
+            <div class="action-row action-row-double">
+                <button data-btn="dash" class="dash-button">D</button>
+                <button data-btn="light" class="action-button">L</button>
+            </div>
+            <div class="action-row action-row-single">
+                <button data-btn="heavy" class="action-button">H</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="connection-status" id="connection-status">
+        <span id="connection-text" class="connecting">Connecting...</span>
+    </div>
+    
+    <div class="vibrate-indicator" id="vibrate-indicator">
+        ATTACK!
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Get room code and player name from URL parameters or prompt
+        const qs = new URLSearchParams(location.search);
+        const roomCode = (qs.get('room') || prompt('Enter Room Code:')).toUpperCase();
+        const playerName = qs.get('name') || prompt('Enter Your Name:') || 'Phone Player';
+
+        // Socket.IO connection
+        const socket = io();
+        
+        // UI elements
+        const statusEl = document.getElementById('status');
+        const connectionStatusEl = document.getElementById('connection-status');
+        const connectionTextEl = document.getElementById('connection-text');
+        const vibrateIndicatorEl = document.getElementById('vibrate-indicator');
+
+        // Input state management
+        let seq = 0;
+        let isInRoom = false; // Track room join status
+        let lastJumpPressed = false; // Track jump button state for edge detection
+        const state = {
+            left: false,
+            right: false,
+            up: false,
+            down: false,
+            light: false,
+            heavy: false,
+            shield: false,
+            dashPending: false,
+            lastHoriz: 1 // Default to right
+        };
+
+        // Input buffer for network delays
+        const inputBuffer = [];
+        const BUFFER_SIZE = 60; // 1 second at 60fps
+        
+        // Connection management
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            connectionTextEl.textContent = 'Connected';
+            connectionTextEl.className = 'connected';
+            
+            // Join the room
+            socket.emit('joinRoom', { roomCode, playerName }, (response) => {
+                if (!response?.success) {
+                    alert('Failed to join room: ' + (response?.error || 'Unknown error'));
+                    statusEl.textContent = 'JOIN FAILED';
+                    return;
+                }
+                
+                statusEl.textContent = `ROOM: ${roomCode}`;
+                console.log('Successfully joined room:', roomCode);
+                isInRoom = true; // Set room join status to true
+            });
+        });
+        
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+            connectionTextEl.textContent = 'Disconnected';
+            connectionTextEl.className = 'disconnected';
+            statusEl.textContent = 'DISCONNECTED';
+            isInRoom = false; // Reset room join status on disconnect
+        });
+        
+        socket.on('reconnect', () => {
+            console.log('Reconnected to server');
+            connectionTextEl.textContent = 'Reconnected';
+            connectionTextEl.className = 'connected';
+            statusEl.textContent = `ROOM: ${roomCode}`;
+            isInRoom = true; // Reconnected, so still in room
+        });
+
+        // D-Pad controls
+        document.querySelectorAll('[data-dir]').forEach(btn => {
+            btn.addEventListener('touchstart', handleDPadStart, { passive: false });
+            btn.addEventListener('touchend', handleDPadEnd, { passive: false });
+            btn.addEventListener('mousedown', handleDPadStart);
+            btn.addEventListener('mouseup', handleDPadEnd);
+        });
+
+        function handleDPadStart(e) {
+            e.preventDefault();
+            const dir = e.target.dataset.dir;
+            state[dir] = true;
+            
+            // Track horizontal direction for dash
+            if (dir === 'left') {
+                state.lastHoriz = -1;
+            } else if (dir === 'right') {
+                state.lastHoriz = 1;
+            }
+            
+            e.target.classList.add('active');
+            vibrateDevice(10); // Light vibration for direction
+            sendInput(true);
+        }
+
+        function handleDPadEnd(e) {
+            e.preventDefault();
+            const dir = e.target.dataset.dir;
+            state[dir] = false;
+            e.target.classList.remove('active');
+            sendInput(true);
+        }
+
+        // Action buttons
+        document.querySelectorAll('[data-btn]').forEach(btn => {
+            const btnType = btn.dataset.btn;
+            
+            btn.addEventListener('touchstart', (e) => handleActionStart(e, btnType), { passive: false });
+            btn.addEventListener('touchend', (e) => handleActionEnd(e, btnType), { passive: false });
+            btn.addEventListener('mousedown', (e) => handleActionStart(e, btnType));
+            btn.addEventListener('mouseup', (e) => handleActionEnd(e, btnType));
+        });
+
+        function handleActionStart(e, btnType) {
+            e.preventDefault();
+            
+            if (btnType === 'dash') {
+                state.dashPending = true;
+                flashButton(e.target);
+                vibrateDevice(25); // Strong vibration for dash
+                showVibrateIndicator('DASH!');
+                sendInput(true);
+                return;
+            }
+            
+            state[btnType] = true;
+            e.target.classList.add('active');
+            
+            // Different vibrations for different actions
+            if (btnType === 'heavy') {
+                vibrateDevice(50); // Strongest for heavy attack
+                showVibrateIndicator('HEAVY!');
+            } else if (btnType === 'light') {
+                vibrateDevice(20); // Medium for light attack
+                showVibrateIndicator('LIGHT!');
+            } else if (btnType === 'shield') {
+                vibrateDevice(15); // Light for shield
+                showVibrateIndicator('SHIELD!');
+            }
+            
+            sendInput(true);
+        }
+
+        function handleActionEnd(e, btnType) {
+            e.preventDefault();
+            
+            if (btnType === 'dash') return; // Dash is instantaneous
+            
+            state[btnType] = false;
+            e.target.classList.remove('active');
+            sendInput(true);
+        }
+
+        // Visual feedback functions
+        function flashButton(btn) {
+            btn.classList.add('active');
+            setTimeout(() => btn.classList.remove('active'), 120);
+        }
+
+        function vibrateDevice(duration) {
+            if ('vibrate' in navigator) {
+                navigator.vibrate(duration);
+            }
+        }
+
+        function showVibrateIndicator(text) {
+            vibrateIndicatorEl.textContent = text;
+            vibrateIndicatorEl.style.display = 'block';
+            setTimeout(() => {
+                vibrateIndicatorEl.style.display = 'none';
+            }, 200);
+        }
+
+        // Input packet building and sending
+        function buildInputPacket() {
+            const dash = state.dashPending;
+            
+            // Edge detection for jump - only send jump when button is first pressed
+            const jumpPressed = state.up && !lastJumpPressed;
+            lastJumpPressed = state.up;
+            
+            const packet = {
+                seq: ++seq,
+                left: state.left,
+                right: state.right,
+                up: jumpPressed, // Send true only on first press, not while held
+                down: state.down,
+                light: state.light,
+                heavy: state.heavy,
+                shield: state.shield,
+                dash: dash,
+                dashDir: dash ? (state.left ? -1 : state.right ? 1 : state.lastHoriz) : null,
+                t: Date.now() // Client timestamp
+            };
+            
+            // Clear dash pending state
+            state.dashPending = false;
+            
+            return packet;
+        }
+
+        function bufferInput(packet) {
+            inputBuffer.push({
+                packet: { ...packet },
+                timestamp: Date.now()
+            });
+            
+            // Keep buffer size manageable
+            if (inputBuffer.length > BUFFER_SIZE) {
+                inputBuffer.shift();
+            }
+        }
+
+        let lastSent = 0;
+        function sendInput(force = false) {
+            const now = performance.now();
+            
+            // Only send inputs if the controller is in a room
+            if (!isInRoom) {
+                console.warn('Controller not in a room, not sending input.');
+                return;
+            }
+
+            // Rate limiting: minimum 50ms between sends (20Hz)
+            if (!force && (now - lastSent) < 50) return;
+            lastSent = now;
+            
+            const packet = buildInputPacket();
+            bufferInput(packet);
+            
+            socket.emit('input', packet);
+            
+            // Debug logging
+            if (packet.dash || packet.light || packet.heavy || packet.shield) {
+                console.log('Action sent:', {
+                    seq: packet.seq,
+                    dash: packet.dash,
+                    dashDir: packet.dashDir,
+                    light: packet.light,
+                    heavy: packet.heavy,
+                    shield: packet.shield
+                });
+            }
+        }
+
+        // Heartbeat to ensure connection stays alive and inputs are sent regularly
+        setInterval(() => sendInput(false), 50); // 20Hz baseline
+
+        // Prevent scrolling and zooming
+        document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+        document.addEventListener('gesturestart', (e) => e.preventDefault());
+        document.addEventListener('gesturechange', (e) => e.preventDefault());
+        document.addEventListener('gestureend', (e) => e.preventDefault());
+
+        // Prevent context menu
+        document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        // Debug info (remove in production)
+        console.log('Controller initialized for room:', roomCode);
+        console.log('Player name:', playerName);
+    </script>
+</body>
+</html> 

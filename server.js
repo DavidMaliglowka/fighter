@@ -156,6 +156,16 @@ const GRAVITY = 1200; // Increased for snappier falls
 const GROUND_Y = 524; // Ground level for platform at Y=580, height=32, player height=80: 580-16-40=524
 const FRAME_RATE = 30; // Match actual tick rate for consistency
 
+// Mobile controller combat constants
+const LIGHT_DAMAGE = 10;
+const LIGHT_RANGE = 70;
+const LIGHT_COOLDOWN = 300;
+const HEAVY_DAMAGE = 22;
+const HEAVY_RANGE = 85;
+const HEAVY_COOLDOWN = 800;
+const HEAVY_KNOCKBACK_MULT = 1.5;
+const HEAVY_STARTUP = 120; // ms
+
 // Death boundary constants - extended fall-off area
 const DEATH_BOUNDARIES = {
     LEFT: -200,      // Extended 200px to the left of play area
@@ -171,7 +181,7 @@ const RESPAWN_DELAY = 3000; // 3 seconds before respawn (with countdown)
 // Dash system constants
 const DASH_VELOCITY = 900; // Horizontal velocity boost (increased from 300)
 const DASH_DURATION = 150; // Duration in milliseconds (reduced from 200 for snappier feel)
-const DASH_COOLDOWN = 350; // Cooldown between dashes in milliseconds (reduced from 500)
+const DASH_COOLDOWN = 1000; // Cooldown between dashes in milliseconds (1 second for mobile controller)
 const DASH_DECAY_RATE = 0.85; // Velocity decay factor per frame (faster decay to prevent overshoot)
 
 // Platform system
@@ -1180,20 +1190,35 @@ function validateInputs(inputs) {
     if (!inputs || typeof inputs !== 'object') return false;
     
     // Validate each input type
-    const validBooleanInputs = ['left', 'right', 'jump', 'attack', 'block', 'down'];
-    const validStringInputs = ['dash']; // Dash can be 'left', 'right', or null
+    const validBooleanInputs = ['left', 'right', 'jump', 'attack', 'block', 'down', 'light', 'heavy', 'shield'];
+    const validNumberInputs = ['seq']; // Sequence number for input ordering
+    const validNullableInputs = ['dashDir']; // Dash direction: -1, 1, or null
     
     for (const key in inputs) {
         if (validBooleanInputs.includes(key)) {
             if (typeof inputs[key] !== 'boolean') return false;
-        } else if (validStringInputs.includes(key)) {
-            // Dash input can be 'left', 'right', or null
-            if (inputs[key] !== null && inputs[key] !== 'left' && inputs[key] !== 'right') {
+        } else if (key === 'dash') {
+            // Special validation for dash - can be boolean (mobile) or string (keyboard) or null
+            if (inputs[key] !== null && 
+                typeof inputs[key] !== 'boolean' && 
+                typeof inputs[key] !== 'string') {
+                return false;
+            }
+            // If string, must be valid direction
+            if (typeof inputs[key] === 'string' && 
+                inputs[key] !== 'left' && inputs[key] !== 'right') {
+                return false;
+            }
+        } else if (validNumberInputs.includes(key)) {
+            if (typeof inputs[key] !== 'number' || inputs[key] < 0) return false;
+        } else if (validNullableInputs.includes(key)) {
+            // dashDir can be -1, 1, or null
+            if (inputs[key] !== null && inputs[key] !== -1 && inputs[key] !== 1) {
                 return false;
             }
         } else {
-            // Unknown input key
-            return false;
+            // Unknown input key - be permissive for backward compatibility
+            continue;
         }
     }
     
@@ -1204,6 +1229,60 @@ function validateInputs(inputs) {
     }
     
     return true;
+}
+
+// Normalize inputs to handle both legacy and new mobile controller formats
+function normalizeInputs(raw, player) {
+    const inputs = {
+        // Movement
+        left: !!raw.left,
+        right: !!raw.right,
+        up: !!raw.up,
+        down: !!raw.down,
+        jump: !!raw.jump || !!raw.up, // Support both jump and up for mobile
+        
+        // Combat actions (new mobile controller support)
+        light: !!raw.light || !!raw.attack, // Map attack to light for backward compatibility
+        heavy: !!raw.heavy,
+        shield: !!raw.shield || !!raw.block, // Map block to shield for mobile
+        
+        // Dash system
+        dash: !!raw.dash || (typeof raw.dash === 'string'), // Support both boolean and string dash
+        dashDir: null,
+        
+        // Legacy support
+        attack: !!raw.attack, // Keep for existing desktop clients
+        block: !!raw.block,   // Keep for existing desktop clients
+        
+        // Sequence tracking
+        seq: raw.seq || 0
+    };
+    
+    // Handle dash direction logic
+    if (inputs.dash) {
+        if (typeof raw.dash === 'string') {
+            // Legacy string-based dash direction
+            inputs.dashDir = raw.dash === 'left' ? -1 : 1;
+        } else if (raw.dashDir !== undefined) {
+            // Mobile controller explicit direction
+            inputs.dashDir = raw.dashDir;
+        } else {
+            // Fall back to last horizontal direction or current movement
+            if (inputs.left) {
+                inputs.dashDir = -1;
+            } else if (inputs.right) {
+                inputs.dashDir = 1;
+            } else {
+                inputs.dashDir = player.lastHorizontal || 1; // Default to right
+            }
+        }
+    }
+    
+    // Track last horizontal movement for dash direction
+    if (inputs.left) player.lastHorizontal = -1;
+    else if (inputs.right) player.lastHorizontal = 1;
+    
+    return inputs;
 }
 
 // Helper function to get all players currently in active rooms
@@ -1242,6 +1321,7 @@ function updatePhysics() {
         }
         
         // Update position based on velocity
+        player.x += player.velocityX * deltaTime; // Add horizontal movement
         player.y += player.velocityY * deltaTime;
         
         // Platform and ground collision detection
@@ -1326,6 +1406,14 @@ function updatePhysics() {
         // Validate and clean up dash state consistency
         validatePlayerDashState(player, playerId);
         
+        // Heavy attack startup processing
+        const now = Date.now();
+        if (player.pendingHeavy && now >= player.heavyStartupEnd && !player.heavyConsumed) {
+            performHeavyAttack(player, playerId, now);
+            player.heavyConsumed = true;
+            player.pendingHeavy = false;
+        }
+        
         // Handle invincibility timer
         if (player.isInvincible && Date.now() > player.invincibilityEndTime) {
             player.isInvincible = false;
@@ -1397,7 +1485,6 @@ function updatePhysics() {
                 livesRemaining: player.lives,
                 deathPosition: { x: player.x, y: player.y },
                 isEliminated: player.eliminated,
-                deathCause: 'combat',
                 timestamp: Date.now()
             });
         }
@@ -1525,7 +1612,21 @@ io.on('connection', (socket) => {
         character: null,
         characterTint: 0xffffff,
         // Player identity
-        displayName: getPlayerDisplayName(socket)
+        displayName: getPlayerDisplayName(socket),
+        
+        // Mobile controller support
+        controlMode: 'keyboard', // 'keyboard' | 'controller'
+        lastSeq: 0, // Last processed sequence number
+        lastHorizontal: 1, // Last horizontal direction (-1 left, 1 right) for dash
+        
+        // Separate attack cooldown timers for mobile controller
+        lastLightAttackTime: 0,
+        lastHeavyAttackTime: 0,
+        
+        // Heavy attack state management
+        pendingHeavy: false,
+        heavyStartupEnd: 0,
+        heavyConsumed: false
     };
     
     // Send empty initial game state (players will get real state after joining a room)
@@ -1590,7 +1691,13 @@ io.on('connection', (socket) => {
     // Handle room joining
     socket.on('joinRoom', (data, callback) => {
         try {
-            const { roomCode } = data;
+            const { roomCode, playerName } = data;
+            
+            // Store player name if provided (from mobile controller)
+            if (playerName && players[socket.id]) {
+                players[socket.id].displayName = playerName.trim();
+                console.log(`[MOBILE] Updated player ${socket.id} displayName to: ${playerName.trim()}`);
+            }
             
             // Check if player is already in a room
             const existingRoom = getRoomByPlayer(socket.id);
@@ -2078,30 +2185,79 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('input', (inputs) => {
+    socket.on('input', (rawInputs) => {
+        const now = Date.now(); // Move this to the top to prevent ReferenceError
         const player = players[socket.id];
         if (!player || player.health <= 0 || player.isDead || player.eliminated) return;
         
-        // Check if player is in an active game - ignore inputs if not
+        // Check if player is in an active room
         const roomInfo = getRoomByPlayer(socket.id);
-        if (!roomInfo || roomInfo.room.gameState.phase !== 'in-progress') {
-            return; // Ignore all inputs when not in active game
+        if (!roomInfo) {
+            // Rate-limited logging for "not in room" to prevent spam
+            if (!socket.lastNoRoomWarning || (now - socket.lastNoRoomWarning) > 5000) {
+                console.log(`Input ignored: Player ${socket.id} not in any room (will suppress for 5s)`);
+                socket.lastNoRoomWarning = now;
+            }
+            return;
+        }
+        
+        const gamePhase = roomInfo.room.gameState.phase;
+        
+        // Allow inputs during 'countdown' and 'in-progress' phases
+        // Block inputs only during 'lobby' and 'game-over' phases for mobile controller testing
+        if (gamePhase === 'game-over') {
+            console.log(`Input ignored: Game over phase for player ${socket.id}`);
+            return;
         }
         
         // Input validation for network edge cases
-        if (!validateInputs(inputs)) return;
+        if (!validateInputs(rawInputs)) {
+            // Rate-limited logging for validation failures to prevent spam
+            if (!socket.lastValidationWarning || (now - socket.lastValidationWarning) > 10000) {
+                console.log(`Input validation failed for player ${socket.id} (will suppress for 10s):`, rawInputs);
+                socket.lastValidationWarning = now;
+            }
+            return;
+        }
         
-        const now = Date.now();
+        // Normalize inputs to handle both legacy and mobile controller formats
+        const inputs = normalizeInputs(rawInputs, player);
         
-        // Horizontal movement (slower when blocking) - allow movement beyond boundaries
-        const moveSpeed = player.blocking ? MOVEMENT_SPEED * 0.5 : MOVEMENT_SPEED;
+        // Debug logging for mobile controller - only log meaningful inputs
+        if (inputs.seq > 0) {
+            const hasMovement = inputs.left || inputs.right || inputs.up || inputs.down;
+            const hasActions = inputs.light || inputs.heavy || inputs.shield || inputs.dash;
+            
+            if (hasMovement || hasActions) {
+                console.log(`Mobile controller input from ${socket.id} (phase: ${gamePhase}):`, {
+                    movement: { left: inputs.left, right: inputs.right, up: inputs.up, down: inputs.down },
+                    actions: { light: inputs.light, heavy: inputs.heavy, shield: inputs.shield, dash: inputs.dash },
+                    seq: inputs.seq
+                });
+            }
+        }
+        
+        // Sequence number validation to prevent out-of-order inputs
+        if (inputs.seq > 0) {
+            if (inputs.seq <= player.lastSeq) {
+                // Rate-limited logging for sequence issues to prevent spam
+                if (!socket.lastSequenceWarning || (now - socket.lastSequenceWarning) > 10000) {
+                    console.log(`Input ignored: Out of order sequence ${inputs.seq} <= ${player.lastSeq} for player ${socket.id} (will suppress for 10s)`);
+                    socket.lastSequenceWarning = now;
+                }
+                return; // Ignore old or duplicate inputs
+            }
+            player.lastSeq = inputs.seq;
+        }
+        
+        // Horizontal movement (velocity-based, frequency-independent)
+        const baseSpeed = 120; // pixels per second
+        const moveSpeed = player.blocking ? baseSpeed * 0.5 : baseSpeed;
         
         if (inputs.left) {
             player.velocityX = -moveSpeed;
-            player.x -= moveSpeed;
         } else if (inputs.right) {
             player.velocityX = moveSpeed;
-            player.x += moveSpeed;
         } else {
             player.velocityX = 0;
         }
@@ -2111,9 +2267,29 @@ io.on('connection', (socket) => {
             performJump(player, now, socket);
         }
         
-        // Dash handling with validation and cooldown
-        if (inputs.dash && validateDash(player, now)) {
-            performDash(player, inputs.dash, now, socket);
+        // Enhanced dash handling for both legacy and mobile controller systems
+        if (inputs.dash) {
+            let dashDirection = null;
+            let dashSource = 'unknown';
+            
+            // Mobile controller dash: explicit dashDir
+            if (inputs.dashDir) {
+                dashDirection = inputs.dashDir === -1 ? 'left' : 'right';
+                dashSource = 'mobile_controller';
+            }
+            // Legacy desktop dash: string-based direction
+            else if (typeof rawInputs.dash === 'string') {
+                dashDirection = rawInputs.dash; // 'left' or 'right'
+                dashSource = 'desktop_legacy';
+            }
+            
+            // Perform dash if direction is determined and validation passes
+            if (dashDirection && validateDash(player, now)) {
+                performDash(player, dashDirection, now, socket);
+                console.log(`Player ${socket.id} dashed ${dashDirection} via ${dashSource} (lastHorizontal: ${player.lastHorizontal})`);
+            } else if (dashDirection) {
+                console.log(`Player ${socket.id} dash ${dashDirection} blocked by validation (cooldown remaining: ${DASH_COOLDOWN - (now - player.lastDashTime)}ms)`);
+            }
         }
         
         // Drop-down handling for one-way platforms
@@ -2135,21 +2311,28 @@ io.on('connection', (socket) => {
             }
         }
         
-        // Blocking
-        player.blocking = inputs.block;
+        // Enhanced Blocking/Shield handling with logging
+        const wasBlocking = player.blocking;
+        player.blocking = inputs.shield || inputs.block; // Support both shield and legacy block
         
-        // Attack (with cooldown)
-        if (inputs.attack && !player.attacking && now - player.lastAttackTime > 500) {
-            player.attacking = true;
-            player.attackProcessed = false;
-            player.lastAttackTime = now;
-            
-            // Reset attack state after a short delay
-            setTimeout(() => {
-                if (players[socket.id]) {
-                    players[socket.id].attacking = false;
-                }
-            }, 200);
+        // Log shield state changes for mobile controller debugging
+        if (player.blocking !== wasBlocking && inputs.shield) {
+            console.log(`Player ${socket.id} ${player.blocking ? 'activated' : 'deactivated'} shield (mobile controller)`);
+        }
+        
+        // Light attack handling
+        if (inputs.light && !player.attacking && (now - player.lastLightAttackTime) >= LIGHT_COOLDOWN) {
+            triggerLightAttack(player, socket.id, now);
+        }
+        
+        // Heavy attack handling with startup gating
+        if (inputs.heavy && (now - player.lastHeavyAttackTime) >= HEAVY_COOLDOWN && !player.pendingHeavy) {
+            triggerHeavyAttack(player, socket.id, now);
+        }
+        
+        // Legacy attack handling (for backward compatibility)
+        if (inputs.attack && !inputs.light && !inputs.heavy && !player.attacking && now - player.lastAttackTime > 500) {
+            triggerLightAttack(player, socket.id, now); // Map legacy attack to light attack
         }
     });
     
@@ -2422,4 +2605,96 @@ function reassignRoomCharacters(roomCode, playerIds) {
     
     console.log(`[CHARACTER] Reassigned characters in room ${roomCode} for ${playerIds.length} players`);
     return assignments;
+}
+
+// Mobile controller attack functions
+function triggerLightAttack(player, playerId, now) {
+    player.attacking = true;
+    player.attackProcessed = false;
+    player.lastLightAttackTime = now;
+    player.lastAttackTime = now; // Keep for legacy compatibility
+    
+    // Emit attack event for visual feedback
+    emitToPlayerRoom(playerId, 'attackEvent', { playerId, kind: 'light' });
+    
+    // Reset attack state after a short delay
+    setTimeout(() => {
+        if (players[playerId]) {
+            players[playerId].attacking = false;
+        }
+    }, 200);
+    
+    console.log(`Player ${playerId} performed light attack`);
+}
+
+function triggerHeavyAttack(player, playerId, now) {
+    player.pendingHeavy = true;
+    player.heavyStartupEnd = now + HEAVY_STARTUP;
+    player.heavyConsumed = false;
+    player.lastHeavyAttackTime = now;
+    
+    // Emit attack charging event for visual feedback
+    emitToPlayerRoom(playerId, 'attackCharging', { 
+        playerId, 
+        kind: 'heavy', 
+        startup: HEAVY_STARTUP 
+    });
+    
+    console.log(`Player ${playerId} started heavy attack (${HEAVY_STARTUP}ms startup)`);
+}
+
+function performHeavyAttack(player, playerId, now) {
+    // Perform heavy hit detection similar to light but with heavy parameters
+    const attackerRoomInfo = getRoomByPlayer(playerId);
+    if (!attackerRoomInfo) return;
+    
+    for (const targetId of attackerRoomInfo.room.players.keys()) {
+        if (playerId === targetId) continue;
+        
+        const target = players[targetId];
+        if (!target) continue;
+        
+        const distance = getDistance(player, target);
+        
+        if (distance <= HEAVY_RANGE && target.health > 0 && !target.isDead && !target.eliminated && !target.isInvincible) {
+            // Calculate heavy damage (reduced if blocking)
+            let damage = HEAVY_DAMAGE;
+            if (target.blocking) {
+                damage = Math.floor(damage * 0.3); // 70% damage reduction when blocking
+            }
+            
+            target.health = Math.max(0, target.health - damage);
+            
+            // Track last attacker for kill attribution
+            target.lastAttacker = playerId;
+            target.lastAttackTime = now;
+            
+            // Interrupt dash if target was dashing when hit
+            if (target.isDashing) {
+                interruptDash(target, targetId, 'damaged');
+            }
+            
+            // Enhanced knockback for heavy attacks
+            const knockbackDistance = 20 * HEAVY_KNOCKBACK_MULT;
+            const angle = Math.atan2(target.y - player.y, target.x - player.x);
+            target.x += Math.cos(angle) * knockbackDistance;
+            target.y += Math.sin(angle) * knockbackDistance;
+            
+            // Keep players in reasonable bounds
+            target.x = Math.max(-200, Math.min(1000, target.x));
+            target.y = Math.max(25, Math.min(975, target.y));
+            
+            console.log(`${playerId} heavy attack hit ${targetId} for ${damage} damage. Target health: ${target.health}`);
+        }
+    }
+    
+    // Emit heavy attack execution event
+    emitToPlayerRoom(playerId, 'attackEvent', { 
+        playerId, 
+        kind: 'heavy', 
+        executed: true 
+    });
+    
+    player.lastHeavyAttackTime = now;
+    console.log(`Player ${playerId} executed heavy attack`);
 }

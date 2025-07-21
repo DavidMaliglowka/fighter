@@ -27,7 +27,7 @@ const GAME_BOUNDS = {
 // Platform physics constants
 const PLATFORM_PHYSICS = {
     PLAYER_WIDTH: 40,
-    PLAYER_HEIGHT: 60,
+    PLAYER_HEIGHT: 48,    // Reduced from 60 to make characters appear larger/closer to ground
     ONE_WAY_VELOCITY_THRESHOLD: 0 // Must be falling to land on one-way platforms
 };
 
@@ -38,6 +38,7 @@ const PLATFORM_PHYSICS = {
 // 3. Better mid-level platform placement
 // 4. Correct green platform setup for landing from above
 // 5. Spawn platforms are invisible but functional
+// 6. Spawn platforms level with main ground
 const PLATFORMS = [
     // Ground Level (Level 0) - Single continuous ground row
     {
@@ -50,23 +51,23 @@ const PLATFORMS = [
         level: 0
     },
     
-    // Spawn platforms (invisible but functional for collision)
+    // Spawn platforms (invisible but functional for collision) - LEVEL WITH MAIN GROUND
     {
         id: 'spawn-left',
         type: PLATFORM_TYPES.SPAWN,
         x: 100,        // Left side
-        y: 540,        // Above main ground
+        y: 580,        // Same level as main ground
         width: 120,
-        height: 20,
+        height: 32,    // Same height as main ground
         level: 0
     },
     {
         id: 'spawn-right', 
         type: PLATFORM_TYPES.SPAWN,
         x: 700,        // Right side
-        y: 540,        // Above main ground  
+        y: 580,        // Same level as main ground
         width: 120,
-        height: 20,
+        height: 32,    // Same height as main ground
         level: 0
     },
     

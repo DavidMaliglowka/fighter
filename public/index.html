@@ -1171,7 +1171,7 @@
         console.log(`[CLIENT PHYSICS] Started with 30fps (deltaTime: ${(1/30).toFixed(4)}s) to match server tick rate`);
         const PHYSICS_CONSTANTS = {
             GRAVITY: 1200, // Increased for snappier falls
-            GROUND_Y: 560,
+            GROUND_Y: 540, // Updated to match platform Y=580, height=32, player height=48
             FRAME_RATE: 30, // Match server tick rate for consistency
             JUMP_VELOCITY_SINGLE: -550, // Slightly stronger jumps
             JUMP_VELOCITY_DOUBLE: -450
@@ -1416,7 +1416,7 @@
         // ==================== END ROOM MANAGEMENT SYSTEM ====================
 
         // Character and asset configuration
-        const SAMURAI_CHARACTERS = ['samurai-1', 'samurai-2', 'samurai-3', 'samurai-4'];
+        const SAMURAI_CHARACTERS = ['samurai-1', 'samurai-4'];
         const SPRITE_CONFIG = {
             IDLE: { frames: 10, width: 96, height: 96, frameRate: 8 },
             RUN: { frames: 12, width: 96, height: 96, frameRate: 12 },
@@ -1425,6 +1425,12 @@
             'ATTACK 1': { frames: 12, width: 96, height: 96, frameRate: 15 },
             HURT: { frames: 11, width: 96, height: 96, frameRate: 10 },
             DEATH: { frames: 21, width: 96, height: 96, frameRate: 12 }
+        };
+
+        // Character-specific Y offsets to compensate for different artwork baselines
+        const CHARACTER_Y_OFFSETS = {
+            'samurai-1': 0,    // Baseline character
+            'samurai-4': 8     // Bring samurai-4 down 8px to align with ground
         };
 
         // Store player character assignments
@@ -1721,7 +1727,8 @@
                     // Force sprite to server position
                     if (myPlayerId && playerSprites[myPlayerId] && gameState.players[myPlayerId]) {
                         const serverPlayer = gameState.players[myPlayerId];
-                        playerSprites[myPlayerId].setPosition(serverPlayer.x + 200, serverPlayer.y);
+                        const yOffset = playerSprites[myPlayerId].characterYOffset || 0;
+                        playerSprites[myPlayerId].setPosition(serverPlayer.x + 200, serverPlayer.y + yOffset);
                     }
                 } else {
                     console.log(`Prediction enabled - 30fps client physics (deltaTime: ${(1/PHYSICS_CONSTANTS.FRAME_RATE).toFixed(4)}s)`);
@@ -1747,7 +1754,8 @@
                     
                     // Update sprite position
                     if (playerSprites[myPlayerId]) {
-                        playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y);
+                        const yOffset = playerSprites[myPlayerId].characterYOffset || 0;
+                        playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y + yOffset);
                         updateLocalPlayerHealthBar();
                     }
                     
@@ -2145,12 +2153,14 @@
                     
                     // Create new player sprite using character base texture (first frame)
                     const baseCharacterKey = `${playerCharacters[id]}-idle`;
-                    playerSprites[id] = this.add.sprite(player.x + 200, player.y, baseCharacterKey, 0); // Use frame 0
-                    playerSprites[id].setScale(0.5); // Scale down from 96x96 to roughly 48x48
+                    const characterYOffset = CHARACTER_Y_OFFSETS[playerCharacters[id]] || 0;
+                    playerSprites[id] = this.add.sprite(player.x + 200, player.y + characterYOffset, baseCharacterKey, 0); // Use frame 0
+                    playerSprites[id].setScale(0.6); // Scale up from 0.5 to make characters appear larger and more grounded
                     
                     // Store player ID and character on sprite for reference
                     playerSprites[id].playerId = id;
                     playerSprites[id].character = playerCharacters[id];
+                    playerSprites[id].characterYOffset = characterYOffset; // Store offset for position updates
                     
                     // Add visual indicator for local player
                     if (id === myPlayerId) {
@@ -2183,10 +2193,12 @@
                     // For local player: only use server position if prediction is disabled
                     if (id === myPlayerId && predictionEnabled && clientPlayerState) {
                         // Use predicted position for local player
-                        playerSprites[id].setPosition(clientPlayerState.x + 200, clientPlayerState.y);
+                        const yOffset = playerSprites[id].characterYOffset || 0;
+                        playerSprites[id].setPosition(clientPlayerState.x + 200, clientPlayerState.y + yOffset);
                     } else {
                         // Use server position for other players or when prediction is off
-                        playerSprites[id].setPosition(player.x + 200, player.y);
+                        const yOffset = playerSprites[id].characterYOffset || 0;
+                        playerSprites[id].setPosition(player.x + 200, player.y + yOffset);
                     }
                     
                     // Update sprite animation and effects based on player state
@@ -2433,8 +2445,9 @@
             
             // Force immediate position sync to eliminate initial error
             if (playerSprites[myPlayerId]) {
-                console.log(`[CLIENT INIT] Setting sprite position to (${clientPlayerState.x + 200}, ${clientPlayerState.y})`);
-                playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y);
+                const yOffset = playerSprites[myPlayerId].characterYOffset || 0;
+                console.log(`[CLIENT INIT] Setting sprite position to (${clientPlayerState.x + 200}, ${clientPlayerState.y + yOffset})`);
+                playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y + yOffset);
                 updateLocalPlayerHealthBar();
             }
             
@@ -2686,7 +2699,8 @@
             
             // Apply predicted position to sprite
             if (playerSprites[myPlayerId]) {
-                playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y); // Add 200px offset
+                const yOffset = playerSprites[myPlayerId].characterYOffset || 0;
+                playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y + yOffset); // Add 200px offset + character offset
                 updateLocalPlayerHealthBar();
             }
         }
@@ -2778,7 +2792,8 @@
                 clientPlayerState.health = serverPlayer.health;
                 
                 if (playerSprites[myPlayerId]) {
-                    playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y);
+                    const yOffset = playerSprites[myPlayerId].characterYOffset || 0;
+                    playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y + yOffset);
                     updateLocalPlayerHealthBar();
                 }
                 
@@ -2882,7 +2897,8 @@
                     
                     if (Math.abs(currentSpriteX - clientPlayerState.x) > changeThreshold || 
                         Math.abs(currentSpriteY - clientPlayerState.y) > changeThreshold) {
-                        playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y);
+                        const yOffset = playerSprites[myPlayerId].characterYOffset || 0;
+                        playerSprites[myPlayerId].setPosition(clientPlayerState.x + 200, clientPlayerState.y + yOffset);
                         updateLocalPlayerHealthBar();
                     }
                 }

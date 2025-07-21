@@ -152,7 +152,7 @@ const ATTACK_RANGE = 70;
 const ATTACK_DAMAGE = 15;
 const MOVEMENT_SPEED = 4; // Increased by 1.5x for more responsive movement
 const GRAVITY = 1200; // Increased for snappier falls
-const GROUND_Y = 560; // Ground level (600 - 40 for ground height)
+const GROUND_Y = 540; // Ground level for platform at Y=580, height=32, player height=48: 580-16-24=540
 const FRAME_RATE = 30; // Match actual tick rate for consistency
 
 // Death boundary constants - extended fall-off area

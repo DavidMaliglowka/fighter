@@ -54,7 +54,7 @@ app.use(helmet({
                 "https://fonts.gstatic.com",
                 "data:"                           // Allow data URI fonts (Phaser uses these)
             ],
-            imgSrc: ["'self'", "data:", "https:"],
+            imgSrc: ["'self'", "data:", "https:", "blob:"],
             connectSrc: [
                 "'self'", 
                 "ws:", 
@@ -78,13 +78,24 @@ app.use(cors({
     credentials: true
 }));
 
-// Rate limiting
+// Rate limiting - more permissive for development
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per windowMs
+    max: process.env.NODE_ENV === 'production' ? 100 : 1000, // Higher limit for development
     message: 'Too many requests from this IP, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => {
+        // Skip rate limiting for localhost in development
+        if (process.env.NODE_ENV !== 'production') {
+            const isLocalhost = req.ip === '127.0.0.1' || 
+                              req.ip === '::1' || 
+                              req.ip === '::ffff:127.0.0.1' ||
+                              req.connection.remoteAddress === '127.0.0.1';
+            return isLocalhost;
+        }
+        return false;
+    }
 });
 app.use(limiter);
 

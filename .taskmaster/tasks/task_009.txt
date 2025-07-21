@@ -1,6 +1,6 @@
 # Task ID: 9
 # Title: Implement Hybrid Authentication System (Guest + Optional Accounts)
-# Status: pending
+# Status: done
 # Dependencies: 8
 # Priority: medium
 # Description: Create a hybrid authentication system supporting both anonymous guest play and optional user accounts, similar to Pokémon Showdown, with seamless switching between modes.
@@ -11,43 +11,150 @@ Implement dual authentication modes: Guest play (default) requires only display 
 Test guest play flow with display name only, verify registered user authentication, test identity protection prevents username conflicts. Test seamless account claiming mid-session, verify Firebase Auth integration works properly. Test session persistence for both guest and registered users.
 
 # Subtasks:
-## 1. Firebase Auth Setup and Dual Provider Configuration [pending]
+## 1. Firebase Auth Setup and Dual Provider Configuration [done]
 ### Dependencies: None
 ### Description: Set up Firebase Authentication with anonymous and email/password providers for hybrid authentication system
 ### Details:
 Install Firebase SDK and configure Firebase project with Authentication enabled. Set up anonymous authentication provider for guest users. Configure email/password authentication for registered accounts. Create Firebase config and initialization in client. Implement Firebase Auth state listeners to handle authentication changes. Set up proper security rules for anonymous vs authenticated users.
+<info added on 2025-07-19T22:28:04.756Z>
+COMPLETED: Firebase Auth Setup and Dual Provider Configuration
 
-## 2. Guest Authentication Flow with Display Name Entry [pending]
+Successfully implemented:
+1. Firebase SDK installation (compat version 10.7.1)
+2. Client-side Firebase config with anonymous + email/password providers
+3. Server-side Firebase Admin setup with JWT token management
+4. Authentication middleware for Socket.IO connections
+5. Complete auth UI with guest play, login, and registration forms
+6. Authentication state management and token passing to server
+
+Key Files Created/Modified:
+- package.json - Added Firebase, JWT, and dotenv dependencies
+- public/firebase-config.js - Client-side auth configuration (standalone version for reference)
+- firebase-admin.js - Server-side Firebase Admin and auth middleware
+- server.js - Integrated auth middleware with Socket.IO
+- public/index.html - Added Firebase CDN, auth UI, and auth logic integration
+
+Architecture:
+- Anonymous auth for guest users (Firebase anonymous provider)
+- Email/password auth for registered users (Firebase auth provider)
+- JWT tokens for server session management
+- Socket.IO auth middleware for connection validation
+- Graceful fallback when Firebase is not configured
+
+Note: Firebase configuration requires actual Firebase project setup with proper credentials in .env file.
+</info added on 2025-07-19T22:28:04.756Z>
+<info added on 2025-07-20T09:35:04.955Z>
+ISSUE RESOLVED: Firestore Database Setup Complete
+
+Problem: Registration failing with "client is offline" errors due to missing Firestore database.
+
+Solution Applied:
+1. Created Firestore database: firebase firestore:databases:create "(default)" --location=nam5
+2. Updated security rules for authentication-based access
+3. Deployed rules: firebase deploy --only firestore:rules
+
+Updated Security Rules:
+- Anonymous and registered users can read/write data
+- User documents protected by auth.uid matching
+- Username availability checking enabled
+- Game stats protected per player
+
+Testing Status: Ready for full authentication testing
+- Guest authentication should work without errors
+- Email registration should create users successfully
+- Firebase Console should show authenticated users
+
+Environment: All Firebase services now properly configured and active.
+</info added on 2025-07-20T09:35:04.955Z>
+<info added on 2025-07-20T09:55:35.214Z>
+UX/UI IMPROVEMENT: Enhanced Authentication Flow
+
+Problem Solved: Clunky UI with authentication and room options stacked together confusingly.
+
+Solution Implemented:
+1. Stepped Authentication Flow:
+   - Step 1: Welcome screen with auth options only
+   - Step 2: Main menu with room options (post-auth)
+   - Step 3: Room lobby when in game
+   - Clean state transitions with no UI overlap
+
+2. Enhanced User Experience:
+   - Added user info display showing current player type (Guest/Registered)
+   - Added sign-out functionality for easy account switching
+   - Improved visual headers with emojis and clearer messaging
+   - Proper initial state management (auth-first)
+
+3. State Management Functions:
+   - Updated showAuthSection(), showMainMenu(), showRoomLobby()
+   - Added updateUserInfo() and handleSignOut() utilities
+   - Integrated with existing room management system
+   - Added proper initialization on page load
+
+Technical Changes:
+- Enhanced HTML structure with better section organization
+- Updated JavaScript state management for clean transitions
+- Added authentication event listeners and sign-out handling
+- Improved integration between auth and room management systems
+
+User Flow: Welcome → Authenticate → Room Options → Room Lobby → Game
+Testing: Ready for user testing of improved authentication experience
+</info added on 2025-07-20T09:55:35.214Z>
+<info added on 2025-07-20T10:13:28.723Z>
+UX REFINEMENT: Clean Authentication State Management
+
+Issues Fixed from User Feedback:
+1. Login/Register buttons persisting on second page - Enhanced state management with !important CSS overrides to force proper hiding of authentication UI when showing main menu
+2. Sign-out button taking vertical space - Replaced separate button with inline text link positioned under user info
+
+Technical Improvements:
+- Enhanced showMainMenu(), showAuthSection(), showAuthForm() with robust CSS property setting using setProperty() with !important flags
+- Integrated sign-out link into user info display (updateUserInfo function)
+- Dynamic event listener binding for sign-out functionality
+- Improved state transition reliability and element selection safety
+
+Updated User Info Display:
+Guest Player: David
+sign out
+
+UI Flow Now:
+Page 1: Welcome + Auth options only → Page 2: "Ready to Fight!" + Room options (clean, no auth UI) → Page 3: Room Lobby
+
+Result: Clean, stepped authentication flow with no UI element persistence between states. Sign-out is now space-efficient and integrated into user context display.
+
+Status: Authentication UX complete and ready for game flow implementation.
+</info added on 2025-07-20T10:13:28.723Z>
+
+## 2. Guest Authentication Flow with Display Name Entry [done]
 ### Dependencies: None
 ### Description: Implement guest play mode requiring only display name entry with UUID generation and local storage persistence
 ### Details:
 Create guest authentication flow with display name input only (no password required). Generate temporary UUID for guest users using crypto.randomUUID(). Implement local storage persistence for guest sessions with display name and UUID. Add display name validation (3-20 chars, no special characters). Create guest user object with isGuest flag. Implement automatic guest login on return visits using stored UUID.
 
-## 3. Registered User Authentication with JWT Tokens [pending]
+## 3. Registered User Authentication with JWT Tokens [done]
 ### Dependencies: 9.1
 ### Description: Implement traditional username/password registration and login with JWT token management for persistent accounts
 ### Details:
 Create registration/login UI forms for username and password. Implement Firebase email/password authentication for registered users. Generate JWT tokens for authenticated users with user payload (userId, username, isGuest: false). Add token validation middleware for registered user sessions. Implement secure session management with token refresh. Create persistent user data storage for registered accounts.
 
-## 4. Identity Protection and Username Reservation System [pending]
+## 4. Identity Protection and Username Reservation System [done]
 ### Dependencies: 9.2, 9.3
 ### Description: Implement system to prevent guests from using registered usernames and manage username reservations
 ### Details:
 Create username reservation database/storage for registered accounts. Implement real-time username validation that checks against reserved names. Add display name conflict detection for guest users attempting to use registered usernames. Create username availability checker with instant feedback. Implement case-insensitive username comparison. Add suggested alternative names when conflicts occur.
 
-## 5. Hybrid User Object Structure and Session Management [pending]
+## 5. Hybrid User Object Structure and Session Management [done]
 ### Dependencies: 9.4
 ### Description: Implement unified user object structure supporting both guest and registered users with proper session handling
 ### Details:
 Create user object structure: {userId, username, isGuest, sessionToken, roomCode, displayName, createdAt, lastActive}. Implement session management for both guest (UUID-based) and registered (JWT-based) users. Add user lookup functions supporting both authentication types. Implement session cleanup and expiration handling. Create user state synchronization across socket connections.
 
-## 6. Room Join UI with Authentication Mode Selection [pending]
+## 6. Room Join UI with Authentication Mode Selection [done]
 ### Dependencies: 9.5
 ### Description: Create room join interface with options for guest play or registered user login/registration
 ### Details:
 Design room join UI with two clear paths: "Play as Guest" and "Login/Register". Create smooth transitions between authentication modes. Add room code input field that works for both user types. Implement authentication mode persistence (remember user preference). Create loading states for both authentication flows. Add clear visual distinction between guest and registered user sessions.
 
-## 7. Seamless Account Claiming and Mid-Session Registration [pending]
+## 7. Seamless Account Claiming and Mid-Session Registration [done]
 ### Dependencies: 9.6
 ### Description: Implement ability for guests to register mid-session to claim their progress and convert to registered accounts
 ### Details:

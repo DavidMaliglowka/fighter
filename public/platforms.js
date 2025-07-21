@@ -11,7 +11,7 @@ const PLATFORM_TYPES = {
 // Platform colors for visual distinction
 const PLATFORM_COLORS = {
     [PLATFORM_TYPES.SOLID]: 0x8B4513,    // Brown
-    [PLATFORM_TYPES.ONE_WAY]: 0x228B22,  // Green  
+    [PLATFORM_TYPES.ONE_WAY]: 0xF36D32,  // Orange  
     [PLATFORM_TYPES.SPAWN]: 0xFF8C00     // Orange
 };
 
@@ -37,19 +37,20 @@ const PLATFORM_PHYSICS = {
 // 2. Proper positioning so player bottom touches platform top
 // 3. Better mid-level platform placement
 // 4. Correct green platform setup for landing from above
+// 5. Spawn platforms are invisible but functional
 const PLATFORMS = [
-    // Ground Level (Level 0) - Single continuous ground
+    // Ground Level (Level 0) - Single continuous ground row
     {
         id: 'ground-main',
         type: PLATFORM_TYPES.SOLID,
         x: 400,        // Center of screen
         y: 580,        // Y position (platform center)
         width: 800,    // Full width
-        height: 40,    // Platform thickness
+        height: 32,    // Single tile height (one row)
         level: 0
     },
     
-    // Spawn platforms (corners of ground level)
+    // Spawn platforms (invisible but functional for collision)
     {
         id: 'spawn-left',
         type: PLATFORM_TYPES.SPAWN,
@@ -84,7 +85,7 @@ const PLATFORMS = [
         type: PLATFORM_TYPES.ONE_WAY,
         x: 200,        // Left side
         y: 400,        // Slightly lower
-        width: 120,
+        width: 128,    // 2 flags * 64px = proper spacing
         height: 15,
         level: 1
     },
@@ -93,7 +94,7 @@ const PLATFORMS = [
         type: PLATFORM_TYPES.ONE_WAY, 
         x: 600,        // Right side
         y: 400,        // Slightly lower
-        width: 120,
+        width: 128,    // 2 flags * 64px = proper spacing
         height: 15,
         level: 1
     },
@@ -104,7 +105,7 @@ const PLATFORMS = [
         type: PLATFORM_TYPES.ONE_WAY,
         x: 150,
         y: 280,        // High up
-        width: 100,
+        width: 128,    // 2 flags * 64px = proper spacing
         height: 15,
         level: 2
     },
@@ -113,7 +114,7 @@ const PLATFORMS = [
         type: PLATFORM_TYPES.ONE_WAY,
         x: 650,
         y: 280,        // High up  
-        width: 100,
+        width: 128,    // 2 flags * 64px = proper spacing
         height: 15,
         level: 2
     },

@@ -1,43 +1,58 @@
 # Task ID: 10
 # Title: Setup Hybrid Firebase + VPS Architecture for User Data and Sessions
-# Status: pending
+# Status: in-progress
 # Dependencies: 9
 # Priority: medium
-# Description: Implement hybrid hosting architecture using Firebase for user authentication and persistent data storage, combined with VPS-hosted game server for real-time multiplayer performance.
+# Description: Implement hybrid hosting architecture using Firebase for user authentication and persistent data storage, combined with VPS-hosted game server for real-time multiplayer performance. Game is currently deployed at https://brawl.maliglow.com through Coolify VPS.
 # Details:
-Set up Firebase Firestore for user profiles, match history, and progression data. Use Firebase for authentication backend while VPS handles real-time game logic. Implement Firestore collections: users (profiles, stats, settings), matches (game results, player performance), rooms (session metadata, timestamps). Create VPS-to-Firebase data sync for match results and user statistics. Use Firebase for persistent data and VPS for real-time gameplay with Socket.IO. Implement offline-first data handling with Firestore offline persistence. Add Firebase Cloud Functions for data processing and aggregation. Create data migration utilities and backup systems. Optimize for Coolify deployment on VPS with Firebase SDK integration. Implement proper error handling and fallback mechanisms when Firebase is unavailable.
+Set up Firebase Firestore for user profiles, match history, and progression data. Use Firebase for authentication backend while VPS handles real-time game logic. Implement Firestore collections: users (profiles, stats, settings), matches (game results, player performance), rooms (session metadata, timestamps). Create VPS-to-Firebase data sync for match results and user statistics. Use Firebase for persistent data and VPS for real-time gameplay with Socket.IO. Implement offline-first data handling with Firestore offline persistence. Add Firebase Cloud Functions for data processing and aggregation. Create data migration utilities and backup systems. Game is currently hosted on Coolify VPS at https://brawl.maliglow.com - need to integrate Firebase services with existing deployment.
 
 # Test Strategy:
-Test Firebase Firestore connection and data operations, verify VPS-to-Firebase sync works correctly, test offline persistence and data recovery. Verify Firebase Cloud Functions execute properly and handle data aggregation. Test fallback mechanisms when Firebase is unavailable and ensure graceful degradation.
+Test Firebase Firestore connection and data operations on live deployment at https://brawl.maliglow.com, verify VPS-to-Firebase sync works correctly, test offline persistence and data recovery. Verify Firebase Cloud Functions execute properly and handle data aggregation. Test fallback mechanisms when Firebase is unavailable and ensure graceful degradation. Validate integration with existing Coolify deployment.
 
 # Subtasks:
-## 1. Firebase Setup and Firestore Collections Design [pending]
+## 1. Assess Current VPS Deployment and Firebase Integration Needs [done]
 ### Dependencies: None
+### Description: Review current deployment at https://brawl.maliglow.com and determine Firebase integration requirements
+### Details:
+Analyze current VPS deployment on Coolify to understand existing architecture. Review current data storage mechanisms and identify what needs to be migrated to Firebase. Assess current authentication system integration with Firebase Auth. Document current deployment configuration and identify integration points for Firebase services. Plan Firebase project setup to work with existing Coolify deployment.
+<info added on 2025-07-20T19:35:51.383Z>
+COMPLETED: VPS deployment assessment finished. Current architecture at https://brawl.maliglow.com confirmed using Coolify VPS with Socket.IO rooms for real-time multiplayer. Firebase Auth integration already functional. Performance optimizations implemented include adaptive tick rate at 30fps, bandwidth optimization with platforms sent once per connection, and high-latency client prediction improvements. Architecture ready for Firebase Firestore integration to add persistent data storage layer.
+</info added on 2025-07-20T19:35:51.383Z>
+
+## 2. Firebase Setup and Firestore Collections Design [pending]
+### Dependencies: 10.1
 ### Description: Set up Firebase project and design Firestore collections for user data, matches, and rooms
 ### Details:
-Initialize Firebase project and configure Firestore database. Create collections structure: users (userId, username, level, xp, wins, losses, gamesPlayed, settings, createdAt), matches (matchId, roomId, players, winner, duration, endedAt, playerStats), rooms (roomId, sessionData, timestamps, metadata). Set up Firestore security rules and configure offline persistence. Install Firebase SDK and configure for VPS deployment with Coolify.
+Initialize Firebase project and configure Firestore database. Create collections structure: users (userId, username, level, xp, wins, losses, gamesPlayed, settings, createdAt), matches (matchId, roomId, players, winner, duration, endedAt, playerStats), rooms (roomId, sessionData, timestamps, metadata). Set up Firestore security rules and configure offline persistence. Install Firebase SDK and configure for existing Coolify VPS deployment integration.
 
-## 2. VPS-to-Firebase Data Sync Implementation [pending]
-### Dependencies: 10.1
+## 3. Integrate Firebase with Existing VPS Deployment [pending]
+### Dependencies: 10.2
+### Description: Integrate Firebase services with current Coolify VPS deployment at https://brawl.maliglow.com
+### Details:
+Modify existing server.js to include Firebase SDK and connect to Firestore. Update Coolify deployment configuration to include Firebase environment variables and credentials. Ensure Firebase integration works with existing Socket.IO real-time game logic. Test Firebase connectivity from VPS environment and verify proper authentication flow integration.
+
+## 4. VPS-to-Firebase Data Sync Implementation [pending]
+### Dependencies: 10.3
 ### Description: Implement real-time data synchronization between VPS game server and Firebase Firestore
 ### Details:
-Create Firebase service layer for VPS server to sync game data. Implement functions: syncUserStats() for player progression updates, saveMatchResult() for completed games, updateRoomMetadata() for session tracking. Set up batched writes for performance optimization and implement retry logic for failed syncs. Create data validation layer before Firebase writes and handle concurrent updates with transactions.
+Create Firebase service layer for VPS server to sync game data. Implement functions: syncUserStats() for player progression updates, saveMatchResult() for completed games, updateRoomMetadata() for session tracking. Set up batched writes for performance optimization and implement retry logic for failed syncs. Create data validation layer before Firebase writes and handle concurrent updates with transactions. Integrate with existing game logic on live deployment.
 
-## 3. Firebase Cloud Functions and Data Processing [pending]
-### Dependencies: 10.1
+## 5. Firebase Cloud Functions and Data Processing [pending]
+### Dependencies: 10.4
 ### Description: Implement Firebase Cloud Functions for automated data processing and aggregation
 ### Details:
-Create Cloud Functions for: user statistics aggregation (calculating rankings, win rates), match data processing (performance analytics, historical trends), automated cleanup of old session data. Implement triggers for real-time data updates and scheduled functions for periodic maintenance. Add error handling and monitoring for Cloud Functions execution.
+Create Cloud Functions for: user statistics aggregation (calculating rankings, win rates), match data processing (performance analytics, historical trends), automated cleanup of old session data. Implement triggers for real-time data updates and scheduled functions for periodic maintenance. Add error handling and monitoring for Cloud Functions execution. Deploy and test functions with live game data.
 
-## 4. Offline Persistence and Error Handling [pending]
-### Dependencies: 10.2, 10.3
+## 6. Offline Persistence and Error Handling [pending]
+### Dependencies: 10.5
 ### Description: Implement offline-first data handling with robust error handling and fallback mechanisms
 ### Details:
-Configure Firestore offline persistence for client-side data caching. Implement fallback mechanisms when Firebase is unavailable: local data storage, queue pending operations, graceful degradation of features. Add comprehensive error handling for network failures, Firebase quota limits, and authentication issues. Create health monitoring for Firebase connectivity and automatic retry logic with exponential backoff.
+Configure Firestore offline persistence for client-side data caching. Implement fallback mechanisms when Firebase is unavailable: local data storage, queue pending operations, graceful degradation of features. Add comprehensive error handling for network failures, Firebase quota limits, and authentication issues. Create health monitoring for Firebase connectivity and automatic retry logic with exponential backoff. Test with live deployment at https://brawl.maliglow.com.
 
-## 5. Data Migration and Backup Systems [pending]
-### Dependencies: 10.4
+## 7. Data Migration and Backup Systems [pending]
+### Dependencies: 10.6
 ### Description: Create utilities for data migration, backup, and recovery operations
 ### Details:
-Implement data migration utilities for moving existing data to Firebase Firestore. Create automated backup systems using Firebase Admin SDK to export data regularly. Develop data recovery procedures and validation tools to ensure data integrity. Add monitoring and alerting for backup operations and implement disaster recovery protocols.
+Implement data migration utilities for moving any existing data to Firebase Firestore. Create automated backup systems using Firebase Admin SDK to export data regularly. Develop data recovery procedures and validation tools to ensure data integrity. Add monitoring and alerting for backup operations and implement disaster recovery protocols. Configure backup automation within Coolify deployment environment.
 

@@ -1,0 +1,11 @@
+# Task ID: 17
+# Title: Implement Username Display and Post-Match Statistics Tracking
+# Status: done
+# Dependencies: 9, 10
+# Priority: high
+# Description: Replace hardcoded socket ID display names with actual usernames from Firebase Auth and implement automatic Firestore updates for match statistics including wins, losses, kills, and deaths.
+# Details:
+Replace socket ID display throughout the application with proper username handling from Firebase Auth. Update player object structure to include username field from authentication data instead of truncated socket IDs. Modify lobby UI components to display usernames in player lists, game over screens to show winner by username, and disconnection messages to reference proper usernames. Implement post-match statistics tracking by creating Firestore update functions that automatically record match results when games end. Add statistics fields to user documents: wins, losses, kills, deaths, matches_played, total_playtime. Create match result handler that triggers after game completion, iterating through all players to update their individual stats based on performance. Update server-side game logic to track kills/deaths during gameplay and aggregate data for Firestore updates. Implement batch write operations for efficient database updates. Add error handling for failed database writes with retry logic. Update all UI components including player cards, leaderboards, and profile displays to show usernames consistently. Ensure username display works for both guest users (display names) and registered users (Firebase usernames).
+
+# Test Strategy:
+Test username display appears correctly in lobby, game, and post-game screens instead of socket IDs. Verify Firestore statistics update automatically after match completion with correct win/loss/kill/death counts. Test with multiple players to ensure all statistics are recorded accurately. Verify guest users show display names while registered users show Firebase usernames. Test disconnection scenarios to ensure proper username display in disconnect messages. Verify batch database operations complete successfully and handle network failures gracefully.

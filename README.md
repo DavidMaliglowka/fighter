@@ -54,7 +54,7 @@ A multiplayer, low-latency, web-based fighting game built with Phaser 3 and Sock
 ### Health System
 - **Starting Health**: 100 HP
 - **Health Bar Colors**: 
-  - Green: >60% health
+  - Orange: >60% health
   - Yellow: 30-60% health
   - Red: <30% health
 - **Death**: Players become gray and cannot move when health reaches 0
